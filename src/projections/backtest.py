@@ -175,7 +175,7 @@ def main() -> None:
     summary.to_csv(config.REPORTS_DIR / f"backtest_{args.season}.csv")
     blend = errors[(errors["model"] == "blend") & (errors["category"] == "PTS")]
     md = to_markdown(summary, errors["as_of"].nunique(), len(blend), args.season)
-    (config.REPORTS_DIR / f"backtest_{args.season}.md").write_text(md + "\n")
+    (config.REPORTS_DIR / f"backtest_{args.season}.md").write_text(md + "\n", encoding="utf-8")
     if update_readme(md):
         print("README.md backtest section updated.")
     print(md)
@@ -186,12 +186,12 @@ def update_readme(md: str, path=config.PROJECT_ROOT / "README.md") -> bool:
     start, end = "<!-- BACKTEST:START -->", "<!-- BACKTEST:END -->"
     if not path.exists():
         return False
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     if start not in text or end not in text:
         return False
     before, rest = text.split(start, 1)
     _, after = rest.split(end, 1)
-    path.write_text(f"{before}{start}\n{md}\n{end}{after}")
+    path.write_text(f"{before}{start}\n{md}\n{end}{after}", encoding="utf-8")
     return True
 
 

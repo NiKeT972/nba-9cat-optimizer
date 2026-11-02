@@ -29,7 +29,7 @@ def load_rosters(path: Path = config.ROSTER_FILE) -> Rosters:
     if not path.exists():
         return {}
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
     return {name: [int(p["player_id"]) for p in players] for name, players in raw.items()}
@@ -51,7 +51,7 @@ def save_rosters(rosters: Rosters, names: pd.Series | dict[int, str] | None = No
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, indent=2))
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)  # atomic on POSIX: never leaves a half-written file
 
 

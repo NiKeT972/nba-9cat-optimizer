@@ -155,3 +155,20 @@ def test_offline_mode_never_downloads(tmp_path, monkeypatch):
     assert fetch.cached_fetch(path, must_not_run, force=True)["v"].iloc[0] == 1
     with pytest.raises(FileNotFoundError):
         fetch.cached_fetch(tmp_path / "missing.parquet", must_not_run)
+
+
+def test_files_are_written_as_utf8_regardless_of_platform_default(tmp_path, monkeypatch):
+    """Windows defaults to cp1252; every text write in the project must pass encoding='utf-8'."""
+    import pathlib
+
+    original = pathlib.Path.write_text
+
+    def strict(self, data, encoding=None, *args, **kwargs):
+        assert encoding == "utf-8", f"write_text without encoding='utf-8' for {self.name}"
+        return original(self, data, encoding, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "write_text", strict)
+    from src.data import roster
+    roster.save_rosters({"My Team": [1]}, names={1: "Nikola Jokić"}, path=tmp_path / "r.json")
+    assert roster.load_rosters(tmp_path / "r.json") == {"My Team": [1]}
+    assert "Jokić" in (tmp_path / "r.json").read_text(encoding="utf-8")
