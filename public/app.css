@@ -121,3 +121,19 @@ details.paste summary { cursor: pointer; color: var(--accent); font-size: 14px; 
   .metric b { font-size: 22px; }
   .gh { display: none; }
 }
+
+/* advisor */
+.advice { display: grid; gap: 16px; margin-top: 12px; }
+.acard { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.acard h3 { margin: 0 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.acard .headline { font-size: 19px; font-weight: 600; margin: 2px 0 10px; letter-spacing: -.01em; }
+.acard ul { margin: 0; padding-left: 18px; }
+.acard li { margin: 6px 0; }
+.rec { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--line); }
+.rec:first-of-type { border-top: 0; }
+.rec .what { font-size: 16px; }
+.rec .why { color: var(--ink2); font-size: 14px; margin-top: 2px; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; margin-right: 4px; }
+.pill.good { background: rgba(var(--good), .15); color: rgb(var(--good)); }
+.pill.bad { background: rgba(var(--bad), .15); color: rgb(var(--bad)); }
+.pill.neutral { background: var(--surface2); color: var(--ink2); }

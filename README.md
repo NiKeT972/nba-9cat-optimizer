@@ -5,7 +5,7 @@
 Built for my own 12-team, 9-cat H2H league (PTS, REB, AST, STL, BLK, 3PM, FG%, FT%, TO), and used every week to set
 lineups, pick up free agents, judge trades and see how this week's matchup is likely to go.
 
-- **Live app:** https://nba-9cat-optimizer.vercel.app (rankings, my team, waivers, trades, matchup simulator, backtest)
+- **Live app:** https://nba-9cat-optimizer.vercel.app (advisor, rankings, my team, waivers, trades, matchup simulator, backtest)
 
 <!-- Screenshots: run the app with real data, then `python scripts/capture_screenshots.py`. -->
 | Player rankings | Matchup simulator |
@@ -101,6 +101,21 @@ Each remaining player-game is simulated 10,000 times:
 Totals are summed over started games only, added to stats already banked this week, and compared category by
 category. The output is the win probability per category, the expected category score (e.g. **5.3 – 3.7**), the
 matchup win probability, the score distribution, and the **close categories** (25–75%) worth targeting.
+
+### 5. Advisor: roster decisions in plain language
+
+The **Advisor** tab turns everything above into ranked recommendations, each with a one-click action:
+
+- **Matchup:** the expected score and win chance, which categories to chase (close), which are locked in, and
+  which are out of reach so you don't waste moves on them.
+- **Waiver moves:** the best add/drop pairs by need-weighted value. Each one is **re-simulated against your actual
+  opponent**, so you see the change in this week's expected categories and win probability next to the long-term gain.
+- **Lineup:** starts lost to the daily slot cap, and players who have stopped playing (likely injured).
+- **Trade ideas:** 1-for-1 offers that raise your need-weighted value while the partner loses at most
+  `ADVICE_TRADE_FAIR_TOL` of raw value, so they're offers a real manager could accept.
+- **Strategy:** categories so far behind (`ADVICE_PUNT_THRESHOLD`) that you should either fix them or punt them.
+
+All thresholds live in `src/config.py`; behaviour is covered by `tests/test_web_advisor.py`.
 
 ## Backtest
 

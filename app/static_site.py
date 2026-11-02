@@ -55,6 +55,13 @@ def web_config() -> dict:
         "proj_weights": config.PROJ_WEIGHTS,
         "shrink_minutes": config.SHRINK_SEASON_PRIOR_MINUTES,
         "backtest_min_minutes": config.BACKTEST_MIN_MINUTES,
+        "advice_sim_count": config.ADVICE_SIM_COUNT,
+        "advice_candidates": config.ADVICE_WAIVER_CANDIDATES,
+        "advice_min_gain": config.ADVICE_MIN_GAIN,
+        "advice_fair_tol": config.ADVICE_TRADE_FAIR_TOL,
+        "advice_max": config.ADVICE_MAX_ITEMS,
+        "advice_safe": config.ADVICE_SAFE_PROB,
+        "advice_punt_threshold": config.ADVICE_PUNT_THRESHOLD,
     }
 
 
