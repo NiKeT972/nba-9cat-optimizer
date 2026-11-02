@@ -20,9 +20,9 @@ python -m pytest
 
 ```
 src/config.py        all tunable numbers (weights, pool size, sim count, API settings)
-src/data/            nba_api fetch with retry + parquet cache, cleaning into tidy tables
+src/data/            nba_api fetch with retry + parquet cache, tidy tables, roster JSON
 src/projections/     shrunk, weighted blend of last-7 / last-15 / season per-minute rates × projected minutes
-src/valuation/       z-scores vs the top-156 pool (iterated), volume-weighted FG%/FT%, punt mode
+src/valuation/       z-scores (top-156 pool, volume-weighted FG%/FT%, punts), start/sit, waivers, trades
 src/simulation/      (phase 5)
 app/                 (phase 6) Streamlit app
 tests/               pytest
