@@ -28,6 +28,7 @@
     <button role="tab" data-tab="rankings">Rankings</button>
     <button role="tab" data-tab="team">My Team</button>
     <button role="tab" data-tab="league">League</button>
+    <button role="tab" data-tab="injuries">Injuries</button>
     <button role="tab" data-tab="waivers">Waivers</button>
     <button role="tab" data-tab="trade">Trade</button>
     <button role="tab" data-tab="matchup">Matchup</button>
@@ -36,6 +37,8 @@
 </header>
 
 <section class="settings wrap" aria-label="League settings">
+  <label class="setting"><span class="label">League</span>
+    <select class="input" id="league-switch" aria-label="Active league"></select></label>
   <div class="setting">
     <span class="label">Punt</span>
     <div class="chips" id="punt-chips"></div>
@@ -48,6 +51,7 @@
   <section id="tab-rankings" class="tab" hidden></section>
   <section id="tab-team" class="tab" hidden></section>
   <section id="tab-league" class="tab" hidden></section>
+  <section id="tab-injuries" class="tab" hidden></section>
   <section id="tab-waivers" class="tab" hidden></section>
   <section id="tab-trade" class="tab" hidden></section>
   <section id="tab-matchup" class="tab" hidden></section>

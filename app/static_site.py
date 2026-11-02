@@ -63,6 +63,15 @@ def web_config() -> dict:
         "advice_safe": config.ADVICE_SAFE_PROB,
         "advice_punt_threshold": config.ADVICE_PUNT_THRESHOLD,
         "waiver_claim_days": config.WAIVER_CLAIM_DAYS,
+        "league_limits": {k: list(v) for k, v in config.LEAGUE_LIMITS.items()},
+        "il_spots": config.DEFAULT_IL_SPOTS,
+        "form_days": config.FORM_DAYS,
+        "form_min_games": config.FORM_MIN_GAMES,
+        "injury_missed_games": config.INJURY_MISSED_GAMES,
+        "grade_bands": [list(b) for b in config.GRADE_BANDS],
+        "team_grade_bands": [list(b) for b in config.TEAM_GRADE_BANDS],
+        "stash_top_fraction": config.INJURY_STASH_TOP_FRACTION,
+        "drop_days": config.INJURY_DROP_DAYS,
     }
 
 
@@ -83,6 +92,7 @@ def export_data() -> dict:
     """Assemble app.json from the cached data. Sections are omitted when their data is missing."""
     from src.data.pipeline import load_game_logs, load_schedule
     from src.projections.project import project_players
+    from src.data.availability import FORM_STATS, form_lines, games_missed, last_games
     from src.simulation.matchup import minutes_cv
 
     out: dict = {"cfg": web_config(), "season": config.SEASON, "built": datetime.now(timezone.utc).isoformat(),
@@ -103,8 +113,27 @@ def export_data() -> dict:
         proj = project_players(logs, as_of=as_of, prior_logs=prior)
         cv = minutes_cv(logs, proj.index, as_of=as_of)
         cols = ["name", "team", "games", "min", "active", "days_since_game", *config.PROJECTED_STATS]
+        form = form_lines(logs, as_of)
+        try:
+            missed = games_missed(logs, load_schedule(config.SEASON), as_of)
+        except Exception:  # noqa: BLE001
+            missed = pd.Series(dtype=int)
+        last5 = last_games(logs, as_of)
+        box = ["min", "pts", "reb", "ast", "stl", "blk", "fg3m", "fgm", "fga", "ftm", "fta", "tov"]
+
+        def extra(pid: int) -> dict:
+            e: dict = {"missed": int(missed.get(pid, 0)), "last_game": None, "form": None, "last5": []}
+            if pid in form.index:
+                e["form"] = {"games": int(form.loc[pid, "games"]), **{c: _clean(form.loc[pid, c]) for c in FORM_STATS}}
+            if pid in last5:
+                g = last5[pid]
+                e["last_game"] = g["date"].iloc[0].strftime("%Y-%m-%d")
+                e["last5"] = [[r.date.strftime("%Y-%m-%d"), r.opponent, *[_clean(getattr(r, c)) for c in box]] for r in g.itertuples()]
+            return e
+
+        out["box_cols"] = ["date", "opp", *box]
         out["players"] = [
-            {"id": int(pid), **{c: _clean(r[c]) for c in cols}, "cv": _clean(cv[pid])}
+            {"id": int(pid), **{c: _clean(r[c]) for c in cols}, "cv": _clean(cv[pid]), **extra(int(pid))}
             for pid, r in proj[cols].iterrows()
         ]
         out["through"] = through.strftime("%Y-%m-%d")
