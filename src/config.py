@@ -93,3 +93,16 @@ SHRINK_RECENT_MPG_GAMES: float = 2.0
 
 # A player with no game in this many days is flagged inactive (likely injured / out of rotation).
 INACTIVE_AFTER_DAYS: int = 10
+
+# ---------------------------------------------------------------------------
+# Z-score valuation
+# ---------------------------------------------------------------------------
+# Player pool the z-scores are measured against: every rostered player in the league.
+ZSCORE_POOL_SIZE: int = NUM_TEAMS * ROSTER_SPOTS  # 156
+# The pool is re-picked from the current top-N and the z-scores recomputed until it stops changing.
+ZSCORE_MAX_ITER: int = 20
+# Projection column(s) behind each category. Percentages use (makes, attempts).
+CAT_COLUMNS: dict[str, str] = {
+    "PTS": "pts", "REB": "reb", "AST": "ast", "STL": "stl", "BLK": "blk", "FG3M": "fg3m", "TOV": "tov",
+}
+PCT_COLUMNS: dict[str, tuple[str, str]] = {"FG_PCT": ("fgm", "fga"), "FT_PCT": ("ftm", "fta")}
