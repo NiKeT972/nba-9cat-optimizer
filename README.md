@@ -6,7 +6,7 @@ Built for my own 12-team, 9-cat H2H league (PTS, REB, AST, STL, BLK, 3PM, FG%, F
 lineups, pick up free agents, judge trades and see how this week's matchup is likely to go.
 
 - **Live app (Streamlit):** _add your Streamlit Community Cloud URL here_
-- **Project site (Vercel):** _add your Vercel URL here_
+- **Project site (Vercel):** https://nba-9cat-optimizer.vercel.app
 
 <!-- Screenshots: run the app with real data, then `python scripts/capture_screenshots.py`. -->
 | Player rankings | Matchup simulator |
