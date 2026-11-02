@@ -1,0 +1,61 @@
+"""Central configuration. Every tunable number lives here — no magic numbers elsewhere.
+
+Values that a user may reasonably want to change per machine (season, data dir,
+cache TTL, proxy) can be overridden with environment variables or a ``.env`` file.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+try:  # python-dotenv is optional at runtime
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:  # pragma: no cover
+    pass
+
+# ---------------------------------------------------------------------------
+# Paths & season
+# ---------------------------------------------------------------------------
+PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
+DATA_DIR: Path = PROJECT_ROOT / os.getenv("NBA_DATA_DIR", "data")
+RAW_DIR: Path = DATA_DIR / "raw"
+PROCESSED_DIR: Path = DATA_DIR / "processed"
+
+SEASON: str = os.getenv("NBA_SEASON", "2026-27")
+SEASON_TYPE: str = "Regular Season"
+
+# ---------------------------------------------------------------------------
+# Data fetching (nba_api / stats.nba.com)
+# ---------------------------------------------------------------------------
+CACHE_TTL_HOURS: float = float(os.getenv("NBA_CACHE_TTL_HOURS", "12"))
+API_TIMEOUT_SECONDS: int = 30
+API_MAX_RETRIES: int = 4
+API_BACKOFF_BASE_SECONDS: float = 2.0  # sleeps 2, 4, 8, 16 ... between retries
+API_MIN_INTERVAL_SECONDS: float = 0.8  # politeness gap between consecutive calls
+API_PROXY: str | None = os.getenv("NBA_API_PROXY") or None
+SCHEDULE_CDN_URL: str = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"
+
+# ---------------------------------------------------------------------------
+# League settings
+# ---------------------------------------------------------------------------
+NUM_TEAMS: int = 12
+ROSTER_SPOTS: int = 13
+
+# The nine scoring categories. FG% and FT% are derived from makes/attempts.
+COUNTING_CATS: list[str] = ["PTS", "REB", "AST", "STL", "BLK", "FG3M", "TOV"]
+PCT_CATS: dict[str, tuple[str, str]] = {"FG_PCT": ("FGM", "FGA"), "FT_PCT": ("FTM", "FTA")}
+CATEGORIES: list[str] = ["PTS", "REB", "AST", "STL", "BLK", "FG3M", "FG_PCT", "FT_PCT", "TOV"]
+NEGATIVE_CATS: set[str] = {"TOV"}  # lower is better
+CAT_LABELS: dict[str, str] = {
+    "PTS": "PTS", "REB": "REB", "AST": "AST", "STL": "STL", "BLK": "BLK",
+    "FG3M": "3PM", "FG_PCT": "FG%", "FT_PCT": "FT%", "TOV": "TO",
+}
+
+# Raw box-score columns kept in the tidy game-log table.
+STAT_COLUMNS: list[str] = [
+    "MIN", "PTS", "REB", "OREB", "DREB", "AST", "STL", "BLK", "TOV",
+    "FGM", "FGA", "FG3M", "FG3A", "FTM", "FTA", "PF", "PLUS_MINUS",
+]
