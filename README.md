@@ -23,7 +23,7 @@ src/config.py        all tunable numbers (weights, pool size, sim count, API set
 src/data/            nba_api fetch with retry + parquet cache, tidy tables, roster JSON
 src/projections/     shrunk, weighted blend of last-7 / last-15 / season per-minute rates × projected minutes
 src/valuation/       z-scores (top-156 pool, volume-weighted FG%/FT%, punts), start/sit, waivers, trades
-src/simulation/      (phase 5)
+src/simulation/      Monte Carlo H2H week: Gamma-Poisson counting stats, attempts->makes shooting
 app/                 (phase 6) Streamlit app
 tests/               pytest
 ```
