@@ -191,3 +191,9 @@ def test_apply_zscores_scores_new_players_on_same_scale():
     z = apply_zscores(newcomer, stats)
     original = apply_zscores(df.iloc[[0]], stats)
     np.testing.assert_allclose(z.values, original.values)
+
+
+def test_pool_iteration_stops_on_cycles():
+    for seed in range(20):
+        _, stats = value_players(make_players(300, seed=seed), pool_size=156)
+        assert stats.iterations < config.ZSCORE_MAX_ITER

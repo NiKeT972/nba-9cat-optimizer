@@ -140,3 +140,18 @@ def test_games_between(raw_schedule):
     sched = clean.clean_schedule(raw_schedule)
     counts = clean.games_between(sched, "2026-10-20", "2026-10-26")
     assert counts.to_dict() == {"BOS": 1, "LAL": 1, "NYK": 2}
+
+
+def test_offline_mode_never_downloads(tmp_path, monkeypatch):
+    monkeypatch.setattr(fetch.config, "OFFLINE", True)
+    path = tmp_path / "x.parquet"
+    pd.DataFrame({"v": [1]}).to_parquet(path)
+    old = time.time() - 999 * 3600
+    os.utime(path, (old, old))
+
+    def must_not_run():
+        raise AssertionError("downloaded in offline mode")
+
+    assert fetch.cached_fetch(path, must_not_run, force=True)["v"].iloc[0] == 1
+    with pytest.raises(FileNotFoundError):
+        fetch.cached_fetch(tmp_path / "missing.parquet", must_not_run)

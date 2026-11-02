@@ -139,3 +139,29 @@ SIM_MINUTES_CV_PRIOR_GAMES: float = 5.0  # shrinkage strength of the prior, in g
 SIM_MINUTES_CV_MAX: float = 0.6
 SIM_TIE_VALUE: float = 0.5  # a tied category counts as half a win
 SIM_CLOSE_BAND: tuple[float, float] = (0.25, 0.75)  # win prob range flagged as "close / worth targeting"
+
+# ---------------------------------------------------------------------------
+# Deployment / offline mode
+# ---------------------------------------------------------------------------
+# stats.nba.com blocks many cloud IPs. With NBA_OFFLINE=1 the app never calls the
+# API and only reads the committed parquet cache (set this on Streamlit Cloud).
+OFFLINE: bool = os.getenv("NBA_OFFLINE", "0").lower() in ("1", "true", "yes")
+# Disable writing rosters to disk (public demo deployments: rosters live in the browser session only).
+ROSTER_SAVE_ENABLED: bool = os.getenv("NBA_ROSTER_SAVE", "1").lower() in ("1", "true", "yes")
+
+# ---------------------------------------------------------------------------
+# Backtest
+# ---------------------------------------------------------------------------
+REPORTS_DIR: Path = PROJECT_ROOT / os.getenv("NBA_REPORTS_DIR", "reports")
+BACKTEST_SEASON: str = PRIOR_SEASON  # evaluate on last completed season
+BACKTEST_WARMUP_DAYS: int = 14  # first projection date = season start + warm-up
+BACKTEST_STEP_DAYS: int = 7  # make a projection every week ...
+BACKTEST_HORIZON_DAYS: int = 7  # ... and score it on the following week's games
+BACKTEST_MIN_MINUTES: float = 20.0  # only score fantasy-relevant players (projected MPG)
+
+# ---------------------------------------------------------------------------
+# Static portfolio site (Vercel)
+# ---------------------------------------------------------------------------
+SITE_DIR: Path = PROJECT_ROOT / os.getenv("NBA_SITE_DIR", "public")
+SITE_TOP_N: int = 50
+STREAMLIT_APP_URL: str = os.getenv("STREAMLIT_APP_URL", "")

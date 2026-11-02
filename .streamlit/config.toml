@@ -1,0 +1,16 @@
+# Separate light/dark sections keep Streamlit following the viewer's colour-scheme
+# preference (a plain [theme] primaryColor would force a fixed light theme).
+[theme.light]
+primaryColor = "#2a78d6"
+
+[theme.dark]
+primaryColor = "#3987e5"
+
+[client]
+toolbarMode = "viewer"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

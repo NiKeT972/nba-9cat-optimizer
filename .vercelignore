@@ -1,0 +1,4 @@
+# Vercel only serves the pre-built static site in public/.
+/*
+!public
+!vercel.json
