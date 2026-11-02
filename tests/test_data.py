@@ -172,3 +172,10 @@ def test_files_are_written_as_utf8_regardless_of_platform_default(tmp_path, monk
     roster.save_rosters({"My Team": [1]}, names={1: "Nikola Jokić"}, path=tmp_path / "r.json")
     assert roster.load_rosters(tmp_path / "r.json") == {"My Team": [1]}
     assert "Jokić" in (tmp_path / "r.json").read_text(encoding="utf-8")
+
+
+def test_clean_schedule_drops_games_with_unknown_teams(raw_schedule):
+    tbd = pd.DataFrame([("0022601201", "2026-12-04T00:00:00Z", 7, 0, None, 0, None)], columns=raw_schedule.columns)
+    sched = clean.clean_schedule(pd.concat([raw_schedule, tbd], ignore_index=True))
+    assert "0022601201" not in set(sched["game_id"])
+    assert sched["home_team"].notna().all() and sched["away_team"].notna().all()

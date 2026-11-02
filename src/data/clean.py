@@ -84,6 +84,10 @@ def clean_schedule(raw_games: pd.DataFrame) -> pd.DataFrame:
     g = raw_games.copy()
     g["gameId"] = g["gameId"].astype(str).str.zfill(10)
     g = g[g["gameId"].str.startswith(REGULAR_SEASON_GAME_PREFIX)]
+    # Knockout games (e.g. NBA Cup quarter-finals) are listed before the teams are known,
+    # with team id 0 and no tricode. Drop them; a later refresh brings them back with teams.
+    known = (g["homeTeam_teamId"].fillna(0).astype("int64") != 0) & (g["awayTeam_teamId"].fillna(0).astype("int64") != 0)
+    g = g[known & g["homeTeam_teamTricode"].notna() & g["awayTeam_teamTricode"].notna()]
     out = pd.DataFrame(
         {
             "game_id": g["gameId"],

@@ -5,8 +5,7 @@
 Built for my own 12-team, 9-cat H2H league (PTS, REB, AST, STL, BLK, 3PM, FG%, FT%, TO), and used every week to set
 lineups, pick up free agents, judge trades and see how this week's matchup is likely to go.
 
-- **Live app (Streamlit):** _add your Streamlit Community Cloud URL here_
-- **Project site (Vercel):** https://nba-9cat-optimizer.vercel.app
+- **Live app:** https://nba-9cat-optimizer.vercel.app (rankings, my team, waivers, trades, matchup simulator, backtest)
 
 <!-- Screenshots: run the app with real data, then `python scripts/capture_screenshots.py`. -->
 | Player rankings | Matchup simulator |
@@ -41,7 +40,8 @@ nba_api ──► tidy game logs ──► projections ──► z-score values 
 | `src/projections` | Per-game projections; walk-forward backtest |
 | `src/valuation` | Z-scores, punt mode, team totals, start/sit, waivers, trade analyzer |
 | `src/simulation` | Vectorised Monte Carlo of the weekly matchup |
-| `app/` | Streamlit app (5 tools + method page), Plotly charts, static site generator |
+| `app/` | Streamlit app (5 tools + method page), Plotly charts, web-app builder |
+| `web/` | Deployed web app: browser engine (`core.js`, parity-tested against Python) and UI |
 | `src/config.py` | **Every** tunable number: weights, shrinkage, pool size, simulation count, … |
 
 ## The maths, simply
@@ -135,7 +135,7 @@ make data        # download 2026-27 + 2025-26 game logs and the schedule (cached
 make app         # streamlit run app/streamlit_app.py
 make test        # pytest
 make backtest    # walk-forward backtest -> reports/
-make site        # static site -> public/
+make site        # web app -> public/ (deployed on Vercel)
 ```
 
 No API keys are needed: `nba_api` reads the public stats.nba.com endpoints. Optional settings are in
@@ -146,17 +146,32 @@ opponent → **Matchup Simulator** for target categories → **Waivers** in stre
 
 ## Deployment
 
-stats.nba.com blocks most cloud IP ranges, so **neither deployment downloads data**. Both read the parquet cache
-committed under `data/raw/`, which is refreshed by `make refresh` locally or by the scheduled
-[`refresh-data`](.github/workflows/refresh-data.yml) GitHub Action. Each push redeploys both.
+**Vercel (the live app).** The deployed app is a static, client-side web app: no server, instant
+interactions, rosters saved in the browser (with JSON import/export and a paste-a-list box).
 
-| Target | What | Setup |
-|---|---|---|
-| **Streamlit Community Cloud** | The interactive app | New app → this repo → main file `app/streamlit_app.py` → Python 3.11. Secrets: `NBA_OFFLINE = "1"` and `NBA_ROSTER_SAVE = "0"` (public demo: rosters stay in each visitor's session; use the JSON download/upload buttons). |
-| **Vercel** | Static project page (rankings, backtest, method) | Import the repo. [`vercel.json`](vercel.json) serves the pre-built `public/` with no build step. Set the `STREAMLIT_APP_URL` repo variable so the site links to the app. |
+```
+Python pipeline ──► public/data/app.json ──► web/core.js (browser engine) ──► web/app.js (UI)
+(nba_api, projections,    (settings, projections,        (z-scores, punts, start/sit,
+ backtest)                 schedule, backtest)             waivers, trades, Monte Carlo)
+```
 
-Streamlit can't run on Vercel: it needs a long-lived server holding a WebSocket per visitor, and Vercel runs
-short-lived functions and static files. So each platform gets the part it does best.
+`web/core.js` is a port of the Python valuation, decision and simulation code.
+[`tests/test_web_parity.py`](tests/test_web_parity.py) runs it under Node against the Python functions on the
+same inputs (z-scores exactly; simulation probabilities within 3 points), so the two can't drift apart.
+[`vercel.json`](vercel.json) serves `public/` with no build step.
+
+**Data refresh.** stats.nba.com blocks most cloud IPs, so nothing downloads at request time. Refresh locally and
+push (or let the scheduled [`refresh-data`](.github/workflows/refresh-data.yml) Action try):
+
+```bash
+python -m src.data.pipeline --force    # latest games
+python -m app.static_site              # rebuild public/
+git add data/raw public && git commit -m "Refresh data" && git push   # Vercel redeploys
+```
+
+**Streamlit (local power-user version).** `streamlit run app/streamlit_app.py` runs the same tools in Python,
+with rosters saved to `data/my_rosters.json`. It can also go on Streamlit Community Cloud (main file
+`app/streamlit_app.py`, secrets `NBA_OFFLINE = "1"`, `NBA_ROSTER_SAVE = "0"`).
 
 ## Tests
 
