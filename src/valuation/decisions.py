@@ -197,6 +197,7 @@ class TradeResult:
     improved: list[str]
     hurt: list[str]
     roster_size_change: int
+    dropped: list[int]  # players auto-dropped to keep my roster size
     their_total_z_delta: float | None = None
     their_categories: pd.DataFrame | None = None
 
@@ -221,6 +222,7 @@ def analyze_trade(
     punt: Iterable[str] | None = None,
     their_ids: Iterable[int] | None = None,
     min_change: float = 0.0,
+    auto_drop: bool = True,
 ) -> TradeResult:
     """Compare my per-game category totals before and after a trade.
 
@@ -235,6 +237,9 @@ def analyze_trade(
         punt: Categories excluded from the totals.
         their_ids: Optional trade partner's roster, to evaluate their side too.
         min_change: z-delta threshold for listing a category as improved/hurt.
+        auto_drop: If I receive more players than I send, drop my lowest ``z_total``
+            players (never the incoming ones) so the comparison is like-for-like.
+            Otherwise raw totals would rise just because the roster got bigger.
     """
     punt = normalize_punt(punt)
     my_ids, give, get = list(my_ids), list(give), list(get)
@@ -242,6 +247,12 @@ def analyze_trade(
     if not_mine:
         raise ValueError(f"Can't trade players not on my roster: {sorted(not_mine)}")
     after = [i for i in my_ids if i not in give] + [i for i in get if i not in my_ids]
+    dropped: list[int] = []
+    excess = len(after) - len(my_ids)
+    if auto_drop and excess > 0:
+        candidates = valued.loc[[i for i in after if i not in get], "z_total"]
+        dropped = list(candidates.nsmallest(excess).index)
+        after = [i for i in after if i not in dropped]
 
     cats, total, zb = _side(valued, my_ids, after, punt)
     weights = category_need_weights(zb, punt)
@@ -250,7 +261,7 @@ def analyze_trade(
     improved = [c for c in live if cats.loc[c, "z_delta"] > min_change]
     hurt = [c for c in live if cats.loc[c, "z_delta"] < -min_change]
 
-    result = TradeResult(cats, total, need_delta, improved, hurt, len(after) - len(my_ids))
+    result = TradeResult(cats, total, need_delta, improved, hurt, len(after) - len(my_ids), dropped)
     if their_ids is not None:
         their_ids = list(their_ids)
         their_after = [i for i in their_ids if i not in get] + [i for i in give if i not in their_ids]
