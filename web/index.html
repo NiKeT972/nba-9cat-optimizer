@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NBA 9-Cat Optimizer</title>
+<meta name="description" content="Projections, z-score valuation, start/sit, waivers, trades and Monte Carlo matchup simulation for 9-category head-to-head fantasy basketball.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>">
+<link rel="stylesheet" href="app.css?v={{VERSION}}">
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js" defer></script>
+<script src="core.js?v={{VERSION}}" defer></script>
+<script src="app.js?v={{VERSION}}" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-inner">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">🏀</span>
+      <div>
+        <h1>NBA 9-Cat Optimizer</h1>
+        <p class="sub" id="data-status">Loading…</p>
+      </div>
+    </div>
+    <a class="gh" id="repo-link" href="https://github.com/NiKeT972/nba-9cat-optimizer">GitHub</a>
+  </div>
+  <nav class="wrap tabs" role="tablist" aria-label="Tools">
+    <button role="tab" data-tab="rankings">Rankings</button>
+    <button role="tab" data-tab="team">My Team</button>
+    <button role="tab" data-tab="waivers">Waivers</button>
+    <button role="tab" data-tab="trade">Trade</button>
+    <button role="tab" data-tab="matchup">Matchup</button>
+    <button role="tab" data-tab="about">Method &amp; Backtest</button>
+  </nav>
+</header>
+
+<section class="settings wrap" aria-label="League settings">
+  <div class="setting">
+    <span class="label">Punt</span>
+    <div class="chips" id="punt-chips"></div>
+  </div>
+  <label class="switch"><input type="checkbox" id="include-today" checked><span>Count today's games</span></label>
+</section>
+
+<main class="wrap" id="main">
+  <section id="tab-rankings" class="tab" hidden></section>
+  <section id="tab-team" class="tab" hidden></section>
+  <section id="tab-waivers" class="tab" hidden></section>
+  <section id="tab-trade" class="tab" hidden></section>
+  <section id="tab-matchup" class="tab" hidden></section>
+  <section id="tab-about" class="tab" hidden></section>
+</main>
+
+<footer class="wrap foot" id="footer"></footer>
+<noscript><p class="wrap">This app needs JavaScript.</p></noscript>
+</body>
+</html>
