@@ -130,6 +130,22 @@ opponent, and list players on waivers. The **League** tab then shows:
   agents and *Put in a claim* for waiver players, and only counts a claimed player's games after the claim clears
   (`WAIVER_CLAIM_DAYS`).
 
+### 7. Multiple leagues, IL, grades and injury reports
+
+- **Multiple leagues:** switch between leagues from the header. Each league has its own teams, waivers, punts and
+  settings: **teams, roster spots (e.g. 13 or 15), IL spots and starters per day**. Valuation adapts: z-scores are
+  measured against that league's rosterable pool (teams × roster spots), and start/sit, the simulator and the
+  advisor use its starters per day.
+- **IL:** every team has an IL list. IL players don't use a roster spot and never start, but they're owned, not free
+  agents. The advisor suggests moving injured players to a free IL spot.
+- **Grades (A+ to F):** each player's 9-cat value is ranked within the league's rosterable pool and mapped to a letter
+  (`GRADE_BANDS`, e.g. top 3% = A+, last rosterable = D, waiver-level = F). **Form** applies the same scale to the last
+  `FORM_DAYS` days. Teams are graded on their all-play record, and every team gets a report card.
+- **Injury report:** nba_api has no official injury feed, so status is inferred from box scores (no game in
+  `INACTIVE_AFTER_DAYS`, or `INJURY_MISSED_GAMES`+ team games missed in a row). Each injured player gets a card with
+  his last game, games missed, projection vs recent form, last 5 box scores and a stash / hold / drop recommendation.
+  You can add the official status and an expected return date; the simulator then counts his games from that day.
+
 ## Backtest
 
 `python -m src.projections.backtest` runs a **walk-forward** test on last season: every week it projects each player

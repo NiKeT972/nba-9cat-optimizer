@@ -181,3 +181,30 @@ ADVICE_PUNT_THRESHOLD: float = -4.0  # team z below this in a category -> sugges
 # League view & waivers
 # ---------------------------------------------------------------------------
 WAIVER_CLAIM_DAYS: int = 1  # a waiver claim clears this many days later (its games before then don't count)
+# Allowed ranges when a user creates a custom league in the web app (defaults = NUM_TEAMS / ROSTER_SPOTS / ACTIVE_LINEUP_SLOTS).
+LEAGUE_LIMITS: dict[str, tuple[int, int]] = {"teams": (2, 30), "roster": (5, 25), "slots": (1, 20)}
+
+# ---------------------------------------------------------------------------
+# IL, grades and injury reports
+# ---------------------------------------------------------------------------
+DEFAULT_IL_SPOTS: int = 2
+LEAGUE_LIMITS["il"] = (0, 10)
+FORM_DAYS: int = 15  # "form" = per-game production over this many recent days
+FORM_MIN_GAMES: int = 2  # fewer games than this in the window -> no form grade
+REPORT_LAST_GAMES: int = 5  # box scores shown in an injured player's report
+INJURY_MISSED_GAMES: int = 2  # flagged as injured after missing this many team games in a row
+# Player grades: rank within the league's rosterable pool (teams x roster spots) -> letter.
+# Each entry is (grade, top fraction of the pool). Players outside the pool get "F".
+GRADE_BANDS: list[tuple[str, float]] = [
+    ("A+", 0.03), ("A", 0.08), ("A-", 0.15), ("B+", 0.25), ("B", 0.37), ("B-", 0.50),
+    ("C+", 0.62), ("C", 0.75), ("C-", 0.87), ("D", 1.00),
+]
+# Team grades from the all-play win percentage (each entry: grade, minimum win %).
+TEAM_GRADE_BANDS: list[tuple[str, float]] = [
+    ("A+", 0.70), ("A", 0.64), ("A-", 0.58), ("B+", 0.55), ("B", 0.52), ("B-", 0.50),
+    ("C+", 0.47), ("C", 0.44), ("C-", 0.40), ("D", 0.33),
+]
+# Injury advice: stash on IL if the player ranks in the top this-fraction of the pool;
+# consider dropping a lower-ranked player who has been out this many days.
+INJURY_STASH_TOP_FRACTION: float = 0.50
+INJURY_DROP_DAYS: int = 21

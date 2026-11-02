@@ -324,14 +324,17 @@
 
   function simulateMatchup(rows, myIds, oppIds, schedule, today, cfg, opts = {}) {
     const { nSims = cfg.sim_count, seed = cfg.sim_seed ?? 42, includeToday = true, excludeInactive = true,
-      useWeekToDate = true, recent = [], availableFrom = null } = opts;
+      useWeekToDate = true, recent = [], availableFrom = null, returns = null } = opts;
     const map = byId(rows);
     const S = makeSampler(mulberry32(seed));
     const { start, weekStart } = weekWindow(today, includeToday, cfg);
     const side = (ids) => {
       let use = ids.filter((i) => map.has(i));
-      if (excludeInactive) use = use.filter((i) => map.get(i).active);
-      const games = dailyLineups(rows, use, schedule, today, includeToday, cfg, availableFrom).filter((g) => g.start);
+      // A player with a user-entered return date plays from that date, even if currently inactive.
+      if (excludeInactive) use = use.filter((i) => map.get(i).active || (returns && returns.has(i)));
+      let avail = availableFrom;
+      if (returns && returns.size) { avail = new Map(availableFrom || []); for (const [i, d] of returns) if (!avail.has(i) || avail.get(i) < d) avail.set(i, d); }
+      const games = dailyLineups(rows, use, schedule, today, includeToday, cfg, avail).filter((g) => g.start);
       const t = simulateTeam(games, map, nSims, cfg, S);
       if (useWeekToDate) { const b = weekToDate(recent, ids, weekStart, start); for (const k in t) for (let s = 0; s < nSims; s++) t[k][s] += b[k]; }
       const v = {};
@@ -425,6 +428,70 @@
     return lines.sort((a, b) => a.rank - b.rank);
   }
 
+  // ------------------------------------------------------------------ grades & injuries
+  /** Letter grade for a rank inside a pool of `poolSize` rosterable players. */
+  function gradeForRank(rank, poolSize, bands) {
+    const frac = rank / poolSize;
+    for (const [g, cut] of bands) if (frac <= cut) return g;
+    return "F";
+  }
+  const GRADE_ORDER = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D", "F"];
+  const gradeIndex = (g) => GRADE_ORDER.indexOf(g);
+
+  /**
+   * Add `grade` (season value) and `formGrade` (last FORM_DAYS) to valued rows, in place.
+   * Grades are relative to the league's rosterable pool (teams x roster spots), so a C in a
+   * 10-team league is a better player than a C in a 16-team league. Form uses the same
+   * category means/stds as the season values, so the two grades are directly comparable.
+   */
+  function addGrades(rows, cfg, punt = []) {
+    const keep = keepCats(punt); const fit = rows.fit;
+    for (const r of rows) r.grade = gradeForRank(r.rank, cfg.pool_size, cfg.grade_bands);
+    const withForm = [];
+    for (const r of rows) {
+      r.formGrade = null; r.formTotal = null;
+      if (!r.form || r.form.games < cfg.form_min_games || !fit) continue;
+      const z = zOf(catValues(r.form, fit.pct), fit.mean, fit.std);
+      r.formZ = z; r.formTotal = sum(keep.map((c) => z[c])); withForm.push(r);
+    }
+    withForm.sort((a, b) => b.formTotal - a.formTotal);
+    withForm.forEach((r, k) => (r.formGrade = gradeForRank(k + 1, cfg.pool_size, cfg.grade_bands)));
+    return rows;
+  }
+
+  function teamGrade(winPct, bands) {
+    for (const [g, min] of bands) if (winPct >= min) return g;
+    return "F";
+  }
+
+  /**
+   * Injury status inferred from box scores (no official feed): out if no game in
+   * `inactive_days`, injured if he missed `injury_missed_games`+ team games in a row.
+   * A user note (status / expected return) overrides the inference.
+   */
+  function injuryStatus(p, cfg, note = null) {
+    if (note && note.status) return { level: note.status === "Healthy" ? "ok" : "out", label: note.status };
+    if (!p.active) return { level: "out", label: `Out: no game in ${p.days_since_game} days` };
+    if ((p.missed || 0) >= cfg.injury_missed_games) return { level: "risk", label: `Missed last ${p.missed} games` };
+    return { level: "ok", label: "Playing" };
+  }
+
+  const withArticle = (g) => (/^[AF]/.test(g) ? "an " : "a ") + g; // "an A-", "a B+", "an F"
+
+  /** Stash / hold / drop recommendation for an injured player. */
+  function injuryAdvice(p, cfg, { onIL = false, freeIL = 0, note = null } = {}) {
+    const stash = p.rank <= cfg.pool_size * cfg.stash_top_fraction;
+    const days = p.days_since_game || 0;
+    if (stash) {
+      if (onIL) return { action: "Keep on IL", why: `${withArticle(p.grade)} player is worth the IL spot until he's back.` };
+      return freeIL > 0
+        ? { action: "Move to IL", why: `${withArticle(p.grade)} player is worth stashing, and you have ${freeIL} free IL spot${freeIL > 1 ? "s" : ""}.` }
+        : { action: "Hold", why: `${withArticle(p.grade)} player is worth holding, but your IL is full, so he takes a roster spot for now.` };
+    }
+    if (days >= cfg.drop_days && !(note && note.ret)) return { action: "Consider dropping", why: `out ${days} days and only ${withArticle(p.grade)} when healthy; a healthy free agent is likely worth more.` };
+    return { action: onIL ? "Keep on IL" : "Hold and monitor", why: `${withArticle(p.grade)} player; re-check once there's news on his return.` };
+  }
+
   // ------------------------------------------------------------------ advisor
   /**
    * Turn the analysis into ranked, plain-language roster recommendations.
@@ -432,11 +499,12 @@
    * rosters: {my, opp, other} player-id lists. Every number comes from the functions above;
    * thresholds come from cfg (src/config.py). Returns structured advice for the UI to word.
    */
-  function advise(rows, rosters, schedule, today, cfg, { punt = [], includeToday = true, recent = [] } = {}) {
+  function advise(rows, rosters, schedule, today, cfg, { punt = [], includeToday = true, recent = [], returns = null } = {}) {
     const map = byId(rows);
     const my = rosters.my.filter((i) => map.has(i));
     const opp = (rosters.opp || []).filter((i) => map.has(i));
     const others = [...opp, ...(rosters.other || [])].filter((i) => map.has(i));
+    const owned = [...others, ...(rosters.myIL || [])]; // my IL players are mine, not free agents
     const out = { matchup: null, lineup: null, moves: [], trades: [], strategy: [] };
     if (!my.length) return out;
 
@@ -447,7 +515,7 @@
     const onWaivers = new Set(rosters.waivers || []);
     const claimDate = addDays(today, cfg.waiver_claim_days ?? 1);
     const sim = (ids, availableFrom = null) => simulateMatchup(rows, ids, opp, schedule, today, cfg,
-      { nSims: cfg.advice_sim_count, includeToday, recent, availableFrom });
+      { nSims: cfg.advice_sim_count, includeToday, recent, availableFrom, returns });
 
     // 1. This week's matchup
     let base = null;
@@ -472,7 +540,8 @@
       out.lineup = {
         benched: ss.filter((r) => r.benched > 0).map((r) => ({ id: r.id, name: r.name, days: benchDays.get(r.id) || [] })),
         lostStarts: sum(ss.map((r) => r.benched)),
-        idle: my.map((i) => map.get(i)).filter((p) => !p.active).map((p) => ({ id: p.id, name: p.name, days: p.days_since_game })),
+        idle: my.map((i) => map.get(i)).filter((p) => !p.active || (p.missed || 0) >= cfg.injury_missed_games)
+          .map((p) => ({ id: p.id, name: p.name, days: p.days_since_game, missed: p.missed || 0 })),
         noGames: ss.filter((r) => r.games === 0).map((r) => ({ id: r.id, name: r.name })),
       };
     }
@@ -480,8 +549,8 @@
     // 3. Waiver moves: best season-long fits and best this-week streams, each re-simulated
     const wk = schedule && schedule.length ? weekWindow(today, includeToday, cfg) : null;
     const gl = wk ? gamesRemaining(rows, rows.map((r) => r.id), schedule, wk.start, wk.end) : null;
-    const season = rankWaivers(rows, my, others, cfg, { punt }).rows.slice(0, cfg.advice_candidates);
-    const weekly = gl ? rankWaivers(rows, my, others, cfg, { punt, gamesLeft: gl }).rows.slice(0, cfg.advice_candidates) : [];
+    const season = rankWaivers(rows, my, owned, cfg, { punt }).rows.slice(0, cfg.advice_candidates);
+    const weekly = gl ? rankWaivers(rows, my, owned, cfg, { punt, gamesLeft: gl }).rows.slice(0, cfg.advice_candidates) : [];
     const seen = new Set(); const cands = [];
     for (const c of [...season, ...weekly]) if (!seen.has(c.id)) { seen.add(c.id); cands.push(c); }
     for (const c of cands) {
@@ -558,5 +627,6 @@
 
   return { CATS, COUNT, PCT, poolPct, catValues, fitPool, valuePlayers, teamTotals, teamCategoryZ, needWeights,
     weekWindow, addDays, gamesRemaining, dailyLineups, startSit, rankWaivers, analyzeTrade, simulateMatchup,
-    matchNames, norm, byId, advise, leagueTable, catResult };
+    matchNames, norm, byId, advise, leagueTable, catResult, addGrades, gradeForRank, teamGrade, gradeIndex,
+    injuryStatus, injuryAdvice };
 });

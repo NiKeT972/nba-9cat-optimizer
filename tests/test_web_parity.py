@@ -75,8 +75,8 @@ def sched_js(s: pd.DataFrame) -> list[dict]:
     return [{"d": r.date.strftime("%Y-%m-%d"), "h": r.home_team, "a": r.away_team} for r in s.itertuples()]
 
 
-def run(fn: str, df: pd.DataFrame, **args):
-    payload = json.dumps({"fn": fn, "players": to_js(df), "cfg": web_config(), "args": args})
+def run(fn: str, df: pd.DataFrame, cfg_override: dict | None = None, **args):
+    payload = json.dumps({"fn": fn, "players": to_js(df), "cfg": {**web_config(), **(cfg_override or {})}, "args": args})
     res = subprocess.run([NODE, "-e", RUNNER, str(CORE)], input=payload, capture_output=True, text=True, check=True)
     return json.loads(res.stdout)
 
@@ -163,3 +163,15 @@ def test_simulation_agrees_with_python_statistically():
         label = config.CAT_LABELS[row["cat"]]
         assert row["pWin"] == pytest.approx(py.categories.loc[label, "p_win"], abs=0.03), label
         assert row["my"] == pytest.approx(py.categories.loc[label, "my_mean"], rel=0.02, abs=1e-3), label
+
+
+@pytest.mark.parametrize("teams,roster", [(10, 15), (6, 10)])
+def test_custom_league_size_matches_python(teams, roster):
+    """A custom league changes the valuation pool to teams x roster; both engines must agree."""
+    df = players_fixture(300, seed=17)
+    pool = teams * roster
+    py, stats = value_players(df, pool_size=pool)
+    js = {r["id"]: r for r in run("value", df, cfg_override={"pool_size": pool})}
+    assert sum(r["inPool"] for r in js.values()) == pool == len(stats.pool_ids)
+    for pid, row in py.iterrows():
+        assert js[pid]["total"] == pytest.approx(row["z_total"], abs=1e-9)
