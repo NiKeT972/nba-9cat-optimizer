@@ -176,3 +176,8 @@ ADVICE_TRADE_FAIR_TOL: float = 0.5  # partner may lose at most this much raw z (
 ADVICE_MAX_ITEMS: int = 3  # suggestions shown per section
 ADVICE_SAFE_PROB: float = 0.85  # category win prob above this = safe, below 1 - this = out of reach
 ADVICE_PUNT_THRESHOLD: float = -4.0  # team z below this in a category -> suggest considering a punt
+
+# ---------------------------------------------------------------------------
+# League view & waivers
+# ---------------------------------------------------------------------------
+WAIVER_CLAIM_DAYS: int = 1  # a waiver claim clears this many days later (its games before then don't count)

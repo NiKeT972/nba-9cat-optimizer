@@ -62,6 +62,7 @@ def web_config() -> dict:
         "advice_max": config.ADVICE_MAX_ITEMS,
         "advice_safe": config.ADVICE_SAFE_PROB,
         "advice_punt_threshold": config.ADVICE_PUNT_THRESHOLD,
+        "waiver_claim_days": config.WAIVER_CLAIM_DAYS,
     }
 
 

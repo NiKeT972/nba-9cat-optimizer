@@ -49,4 +49,4 @@ st.dataframe(
                    "drop": "Suggested drop", "helps": "Helps most", "games_left": "Games left",
                    "weekly_fit": "Weekly fit"},
 )
-st.caption("Fit = Σ (category weight × player z). Net gain = fit − fit of your weakest-fit player (the suggested drop).")
+st.caption("Fit = Σ (category weight × player z). Net gain = fit − fit of your lowest-value player (the suggested drop).")

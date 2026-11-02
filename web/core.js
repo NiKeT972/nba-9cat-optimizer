@@ -135,7 +135,7 @@
   }
 
   /** One entry per (player, scheduled game) in [start, end]. */
-  function playerGames(rows, ids, schedule, start, end) {
+  function playerGames(rows, ids, schedule, start, end, availableFrom = null) {
     const byTeam = new Map();
     for (const g of schedule) {
       if (g.d < start || g.d > end) continue;
@@ -147,7 +147,8 @@
     const map = byId(rows); const out = [];
     for (const id of ids) {
       const p = map.get(id); if (!p) continue;
-      for (const g of byTeam.get(p.team) || []) out.push({ id, d: g.d, opp: g.opp, z: p.total });
+      const from = availableFrom ? availableFrom.get(id) : undefined;
+      for (const g of byTeam.get(p.team) || []) if (!from || g.d >= from) out.push({ id, d: g.d, opp: g.opp, z: p.total });
     }
     return out;
   }
@@ -159,9 +160,9 @@
   }
 
   /** Daily lineup: top `slots` per-game values start each day (positions ignored). */
-  function dailyLineups(rows, ids, schedule, today, includeToday, cfg) {
+  function dailyLineups(rows, ids, schedule, today, includeToday, cfg, availableFrom = null) {
     const { start, end } = weekWindow(today, includeToday, cfg);
-    const pg = playerGames(rows, ids, schedule, start, end);
+    const pg = playerGames(rows, ids, schedule, start, end, availableFrom);
     const days = new Map();
     pg.forEach((g, k) => { g._k = k; if (!days.has(g.d)) days.set(g.d, []); days.get(g.d).push(g); });
     for (const list of days.values()) {
@@ -193,8 +194,9 @@
     const taken = new Set([...rostered, ...mine]);
     const w = needWeights(teamCategoryZ(map, mine), cfg, punt);
     const fitOf = (p) => sum(CATS.map((c) => w[c] * p.z[c]));
+    // Drop candidate = lowest raw value (never cut a star just because his categories are already won).
     let worst = null;
-    for (const id of mine) { const f = fitOf(map.get(id)); if (!worst || f < worst.f) worst = { id, f }; }
+    for (const id of mine) { const p = map.get(id); if (!worst || p.total < worst.total) worst = { id, total: p.total, f: fitOf(p) }; }
     const out = [];
     for (const p of rows) {
       if (taken.has(p.id) || (onlyActive && !p.active)) continue;
@@ -322,14 +324,14 @@
 
   function simulateMatchup(rows, myIds, oppIds, schedule, today, cfg, opts = {}) {
     const { nSims = cfg.sim_count, seed = cfg.sim_seed ?? 42, includeToday = true, excludeInactive = true,
-      useWeekToDate = true, recent = [] } = opts;
+      useWeekToDate = true, recent = [], availableFrom = null } = opts;
     const map = byId(rows);
     const S = makeSampler(mulberry32(seed));
     const { start, weekStart } = weekWindow(today, includeToday, cfg);
     const side = (ids) => {
       let use = ids.filter((i) => map.has(i));
       if (excludeInactive) use = use.filter((i) => map.get(i).active);
-      const games = dailyLineups(rows, use, schedule, today, includeToday, cfg).filter((g) => g.start);
+      const games = dailyLineups(rows, use, schedule, today, includeToday, cfg, availableFrom).filter((g) => g.start);
       const t = simulateTeam(games, map, nSims, cfg, S);
       if (useWeekToDate) { const b = weekToDate(recent, ids, weekStart, start); for (const k in t) for (let s = 0; s < nSims; s++) t[k][s] += b[k]; }
       const v = {};
@@ -366,6 +368,63 @@
     };
   }
 
+  // ------------------------------------------------------------------ league view
+  /** Category comparison between two stat lines: +1 / 0.5 / 0 per category from team a's side. */
+  function catResult(a, b, c) {
+    const x = a[c], y = b[c];
+    if (!(x === x) || !(y === y)) return 0.5; // NaN (no attempts) counts as a tie
+    if (x === y) return 0.5;
+    return (NEG.has(c) ? x < y : x > y) ? 1 : 0;
+  }
+
+  /**
+   * Rate every team: projected per-game and this-week stat lines, category ranks, summed z,
+   * and all-play power rankings (each team's category record against every other team).
+   * teams: [{id, name, players}]. Ignores punts: other managers don't punt my categories.
+   */
+  function leagueTable(rows, teams, schedule, today, cfg, { includeToday = true } = {}) {
+    const map = byId(rows);
+    const hasSched = !!(schedule && schedule.length);
+    const lines = teams.filter((t) => t.players.length).map((t) => {
+      const ids = t.players.filter((i) => map.has(i));
+      const perGame = teamTotals(map, ids);
+      const z = teamCategoryZ(map, ids);
+      let week = null, games = 0, started = 0;
+      if (hasSched) {
+        const lu = dailyLineups(rows, ids, schedule, today, includeToday, cfg);
+        games = lu.length;
+        const startedCount = new Map();
+        for (const g of lu) if (g.start) { startedCount.set(g.id, (startedCount.get(g.id) || 0) + 1); started++; }
+        week = teamTotals(map, ids, startedCount);
+      }
+      return { id: t.id, name: t.name, size: ids.length, perGame, week, z, total: sum(CATS.map((c) => z[c])), games, started };
+    });
+    const allPlay = (key) => {
+      for (const a of lines) {
+        let w = 0, l = 0, tie = 0;
+        for (const b of lines) {
+          if (a === b || !a[key] || !b[key]) continue;
+          for (const c of CATS) { const r = catResult(a[key], b[key], c); if (r === 1) w++; else if (r === 0) l++; else tie++; }
+        }
+        a[key + "Record"] = { w, l, t: tie, pct: w + l + tie ? (w + tie / 2) / (w + l + tie) : 0 };
+      }
+    };
+    allPlay("perGame");
+    if (hasSched) allPlay("week");
+    // category ranks (1 = best) on projected per-game lines
+    for (const c of CATS) {
+      const order = [...lines].sort((a, b) => {
+        const x = a.perGame[c], y = b.perGame[c];
+        return NEG.has(c) ? x - y : y - x;
+      });
+      order.forEach((t, k) => { (t.catRank = t.catRank || {})[c] = k + 1; });
+    }
+    const byPct = (key) => [...lines].sort((a, b) => b[key + "Record"].pct - a[key + "Record"].pct || b.total - a.total);
+    byPct("perGame").forEach((t, k) => (t.rank = k + 1));
+    if (hasSched) byPct("week").forEach((t, k) => (t.weekRank = k + 1));
+    return lines.sort((a, b) => a.rank - b.rank);
+  }
+
   // ------------------------------------------------------------------ advisor
   /**
    * Turn the analysis into ranked, plain-language roster recommendations.
@@ -385,8 +444,10 @@
     const w = needWeights(tz, cfg, punt);
     const fitOf = (p) => sum(CATS.map((c) => w[c] * p.z[c]));
     const canSim = !!(schedule && schedule.length && opp.length);
-    const sim = (ids) => simulateMatchup(rows, ids, opp, schedule, today, cfg,
-      { nSims: cfg.advice_sim_count, includeToday, recent });
+    const onWaivers = new Set(rosters.waivers || []);
+    const claimDate = addDays(today, cfg.waiver_claim_days ?? 1);
+    const sim = (ids, availableFrom = null) => simulateMatchup(rows, ids, opp, schedule, today, cfg,
+      { nSims: cfg.advice_sim_count, includeToday, recent, availableFrom });
 
     // 1. This week's matchup
     let base = null;
@@ -425,10 +486,13 @@
     for (const c of [...season, ...weekly]) if (!seen.has(c.id)) { seen.add(c.id); cands.push(c); }
     for (const c of cands) {
       if (c.dropId === undefined) continue;
+      const claim = onWaivers.has(c.id);
+      const avail = claim ? new Map([[c.id, claimDate]]) : null;
+      const games = wk ? playerGames(rows, [c.id], schedule, wk.start, wk.end, avail).length : null;
       const move = { add: c.id, addName: c.name, drop: c.dropId, dropName: c.drop, gain: c.netGain, helps: c.helps,
-        games: gl ? gl.get(c.id) || 0 : null, dropGames: gl ? gl.get(c.dropId) || 0 : null };
+        claim, claimDate: claim ? claimDate : null, games, dropGames: gl ? gl.get(c.dropId) || 0 : null };
       if (base) {
-        const after = sim(my.filter((i) => i !== c.dropId).concat(c.id));
+        const after = sim(my.filter((i) => i !== c.dropId).concat(c.id), avail);
         move.dExpected = after.expected[0] - base.expected[0];
         move.dWin = after.pWin - base.pWin;
       }
@@ -494,5 +558,5 @@
 
   return { CATS, COUNT, PCT, poolPct, catValues, fitPool, valuePlayers, teamTotals, teamCategoryZ, needWeights,
     weekWindow, addDays, gamesRemaining, dailyLineups, startSit, rankWaivers, analyzeTrade, simulateMatchup,
-    matchNames, norm, byId, advise };
+    matchNames, norm, byId, advise, leagueTable, catResult };
 });

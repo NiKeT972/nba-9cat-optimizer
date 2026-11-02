@@ -114,3 +114,17 @@ def test_no_roster_no_advice():
     df = players_fixture(40)
     out = advise(df, {"my": [], "opp": [], "other": []})["advice"]
     assert out["moves"] == [] and out["trades"] == [] and out["matchup"] is None
+
+
+def test_never_suggests_dropping_a_star():
+    """A stacked team's best player can have the lowest need-weighted fit; he must not be the drop."""
+    df = players_fixture(150, seed=21)
+    my = ids(df, 0, 13)
+    star = my[0]
+    df.loc[my, ["pts", "reb", "ast", "stl", "blk", "fg3m"]] *= 1.8  # dominant everywhere...
+    df.loc[star, "tov"] = 6.0  # ...but the star turns it over a lot
+    out = advise(df, {"my": my, "opp": ids(df, 13, 26), "other": ids(df, 26, 100)})
+    z = out["z"]
+    lowest = min(my, key=lambda i: z[str(i)]["total"])
+    for m in out["advice"]["moves"]:
+        assert m["drop"] == lowest and m["drop"] != star
