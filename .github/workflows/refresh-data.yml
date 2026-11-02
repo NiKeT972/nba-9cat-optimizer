@@ -1,0 +1,47 @@
+name: refresh data and site
+
+# Downloads the latest game logs, rebuilds the backtest report (if missing) and the
+# static site, and commits the results. The push redeploys Streamlit Cloud and Vercel.
+# stats.nba.com often blocks GitHub-hosted runners; if this job fails, set the
+# NBA_API_PROXY secret or run `make refresh` locally and push.
+
+on:
+  schedule:
+    - cron: "17 10 * * *"   # daily, after the night's games are final
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      NBA_API_PROXY: ${{ secrets.NBA_API_PROXY }}
+      STREAMLIT_APP_URL: ${{ vars.STREAMLIT_APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Download data
+        run: |
+          python -m src.data.pipeline --force
+          python -m src.data.pipeline --season "$(python -c 'from src import config; print(config.PRIOR_SEASON)')"
+      - name: Backtest (only when the report is missing)
+        run: |
+          season=$(python -c 'from src import config; print(config.BACKTEST_SEASON)')
+          if [ ! -f "reports/backtest_${season}.csv" ]; then
+            python -m src.data.pipeline --season "$(python -c "from src import config; print(config.previous_season('${season}'))")" || true
+            python -m src.projections.backtest --season "${season}"
+          fi
+      - run: python -m app.static_site
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/raw reports public
+          git diff --cached --quiet || git commit -m "Refresh NBA data and site ($(date -u +%F))"
+          git push

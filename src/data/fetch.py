@@ -102,6 +102,10 @@ def cached_fetch(
     if not force and is_fresh(path, ttl_hours):
         logger.info("Cache hit: %s", path.name)
         return pd.read_parquet(path)
+    if config.OFFLINE:
+        if path.exists():
+            return pd.read_parquet(path)
+        raise FileNotFoundError(f"Offline mode (NBA_OFFLINE=1) and no cached data at {path}")
     try:
         df = call_with_retry(fetch_fn)
     except Exception:
@@ -158,6 +162,8 @@ def fetch_schedule(season: str = config.SEASON, force: bool = False) -> tuple[pd
     """
     games_path = config.RAW_DIR / f"schedule_{season}.parquet"
     weeks_path = config.RAW_DIR / f"schedule_weeks_{season}.parquet"
+    if config.OFFLINE and games_path.exists():
+        return pd.read_parquet(games_path), (pd.read_parquet(weeks_path) if weeks_path.exists() else pd.DataFrame())
     if not force and is_fresh(games_path) and weeks_path.exists():
         return pd.read_parquet(games_path), pd.read_parquet(weeks_path)
 

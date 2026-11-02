@@ -108,11 +108,14 @@ def fit_pool(
 
     Starts with every player as the pool, then repeatedly re-selects the top
     ``pool_size`` by total z (excluding punted categories) until membership is stable.
+    If players near the cut-off keep swapping in and out (a cycle), it stops at the
+    first repeat; the difference is a couple of marginal players and negligible.
     """
     punt = normalize_punt(punt)
     keep = [c for c in config.CATEGORIES if c not in punt]
     pool_size = min(pool_size, len(df))
     pool_ids = df.index
+    seen: set[frozenset] = set()
 
     for it in range(1, max_iter + 1):
         pool = df.loc[pool_ids]
@@ -122,8 +125,12 @@ def fit_pool(
 
         totals = _zscore(category_values(df, pct), mean, std)[keep].sum(axis=1)
         new_ids = totals.nlargest(pool_size).index
-        if set(new_ids) == set(pool_ids):
-            break
+        key = frozenset(new_ids)
+        if key == frozenset(pool_ids):
+            break  # converged
+        if key in seen:
+            break  # 2-cycle at the pool boundary (players swapping in/out at #156): stop here
+        seen.add(frozenset(pool_ids))
         pool_ids = new_ids
 
     return PoolStats(mean=mean, std=std, pool_pct=pct, pool_ids=pd.Index(pool_ids), iterations=it, punt=punt)

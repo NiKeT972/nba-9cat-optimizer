@@ -3,7 +3,11 @@ __pycache__/
 .venv/
 .env
 .pytest_cache/
-data/raw/
+.streamlit/secrets.toml
+.vercel/
+.DS_Store
+# Raw parquet caches under data/raw/ ARE committed: the deployed apps read them
+# because stats.nba.com blocks most cloud IPs. Derived tables and personal rosters are not.
 data/processed/
 data/my_rosters.json
-.DS_Store
+*.tmp

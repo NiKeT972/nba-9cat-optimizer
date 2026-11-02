@@ -121,6 +121,12 @@ def daily_lineups(
 # ---------------------------------------------------------------------------
 # Waivers
 # ---------------------------------------------------------------------------
+def waiver_need_weights(valued: pd.DataFrame, my_ids: Iterable[int], punt: Iterable[str] | None = None) -> pd.Series:
+    """Per-category need weights for my roster (see :func:`src.valuation.team.category_need_weights`)."""
+    ids = [i for i in my_ids if i in valued.index]
+    return category_need_weights(team_category_z(valued, ids), normalize_punt(punt))
+
+
 def rank_waivers(
     valued: pd.DataFrame,
     my_ids: Iterable[int],
@@ -157,8 +163,7 @@ def rank_waivers(
     if only_active and "active" in fa:
         fa = fa[fa["active"].astype(bool)]
 
-    weights = category_need_weights(team_category_z(valued, my_ids), punt)
-    w = weights.rename(lambda c: f"z_{c}")
+    w = waiver_need_weights(valued, my_ids, punt).rename(lambda c: f"z_{c}")
 
     contrib = fa[Z_COLS].mul(w, axis=1)
     out = fa[["name", "team", "z_total", *Z_COLS]].copy()
@@ -180,7 +185,6 @@ def rank_waivers(
         out["weekly_fit"] = out["fit"] * out["games_left"]
         sort_col = "weekly_fit"
     out = out.sort_values(sort_col, ascending=False)
-    out.attrs["need_weights"] = weights
     return out.head(top_n) if top_n else out
 
 
