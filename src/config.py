@@ -59,3 +59,37 @@ STAT_COLUMNS: list[str] = [
     "MIN", "PTS", "REB", "OREB", "DREB", "AST", "STL", "BLK", "TOV",
     "FGM", "FGA", "FG3M", "FG3A", "FTM", "FTA", "PF", "PLUS_MINUS",
 ]
+
+
+def previous_season(season: str) -> str:
+    """'2026-27' -> '2025-26'."""
+    start = int(season[:4]) - 1
+    return f"{start}-{str(start + 1)[-2:]}"
+
+
+PRIOR_SEASON: str = previous_season(SEASON)
+
+# ---------------------------------------------------------------------------
+# Projections
+# ---------------------------------------------------------------------------
+# Stats projected per minute, then scaled by projected minutes. FG%/FT% are
+# derived from projected makes / attempts so they stay internally consistent.
+PROJECTED_STATS: list[str] = ["pts", "reb", "ast", "stl", "blk", "fg3m", "tov", "fgm", "fga", "ftm", "fta"]
+
+# Look-back windows (calendar days before the projection date) and blend weights.
+# "season" = every game this season before the projection date. Weights are normalised.
+PROJ_WINDOW_DAYS: dict[str, int] = {"last7": 7, "last15": 15}
+PROJ_WEIGHTS: dict[str, float] = {"last7": 0.20, "last15": 0.30, "season": 0.50}
+
+# Shrinkage strengths (empirical-Bayes style pseudo-observations):
+# season per-minute rate is shrunk toward a prior (last season's rate, or league
+# average for rookies) as if the prior were worth this many minutes of play ...
+SHRINK_SEASON_PRIOR_MINUTES: float = 300.0
+# ... and each short window is shrunk toward the (shrunk) season rate.
+SHRINK_RECENT_MINUTES: float = 60.0
+# Same idea for minutes-per-game, measured in games.
+SHRINK_SEASON_MPG_GAMES: float = 4.0
+SHRINK_RECENT_MPG_GAMES: float = 2.0
+
+# A player with no game in this many days is flagged inactive (likely injured / out of rotation).
+INACTIVE_AFTER_DAYS: int = 10
