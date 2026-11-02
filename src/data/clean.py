@@ -101,12 +101,13 @@ def clean_schedule(raw_games: pd.DataFrame) -> pd.DataFrame:
 def team_games(schedule: pd.DataFrame) -> pd.DataFrame:
     """Explode the schedule to one row per team per game.
 
-    Output columns: ``team_id, team, game_id, date, week, opponent, is_home``.
+    Output columns: ``team_id, team, game_id, date, [week,] opponent, is_home``.
     """
+    cols = ["team_id", "team", "game_id", "date", *(["week"] if "week" in schedule else []), "opponent", "is_home"]
     home = schedule.rename(columns={"home_team_id": "team_id", "home_team": "team", "away_team": "opponent"})
-    home = home.assign(is_home=True)[["team_id", "team", "game_id", "date", "week", "opponent", "is_home"]]
+    home = home.assign(is_home=True)[cols]
     away = schedule.rename(columns={"away_team_id": "team_id", "away_team": "team", "home_team": "opponent"})
-    away = away.assign(is_home=False)[["team_id", "team", "game_id", "date", "week", "opponent", "is_home"]]
+    away = away.assign(is_home=False)[cols]
     return pd.concat([home, away], ignore_index=True).sort_values(["date", "team"]).reset_index(drop=True)
 
 

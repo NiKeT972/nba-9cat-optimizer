@@ -124,3 +124,18 @@ ACTIVE_LINEUP_SLOTS: int = 10  # daily starting slots (positions ignored)
 # dominant -> ~0. Larger scale = flatter weights (closer to plain z-value ranking).
 WAIVER_NEED_SCALE: float = 3.0
 WAIVER_TOP_N: int = 25
+
+# ---------------------------------------------------------------------------
+# Monte Carlo matchup simulator
+# ---------------------------------------------------------------------------
+SIM_COUNT: int = 10_000
+SIM_SEED: int | None = 42  # fixed for reproducible results; None = fresh randomness every run
+# Game-to-game "role shock": every stat in a simulated game is scaled by a common
+# Gamma(mean 1, CV) draw, fitted to the player's minutes variability in recent games.
+# This makes counting stats over-dispersed (Gamma-Poisson) and correlated within a game.
+SIM_RECENT_GAMES: int = 15
+SIM_MINUTES_CV_DEFAULT: float = 0.25  # prior CV (league-typical)
+SIM_MINUTES_CV_PRIOR_GAMES: float = 5.0  # shrinkage strength of the prior, in games
+SIM_MINUTES_CV_MAX: float = 0.6
+SIM_TIE_VALUE: float = 0.5  # a tied category counts as half a win
+SIM_CLOSE_BAND: tuple[float, float] = (0.25, 0.75)  # win prob range flagged as "close / worth targeting"
