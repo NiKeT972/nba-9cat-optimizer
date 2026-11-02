@@ -367,7 +367,7 @@
   }
 
   // ------------------------------------------------------------------ name matching (paste a roster)
-  const norm = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
   function matchNames(lines, rows) {
     const index = new Map(rows.map((p) => [norm(p.name), p.id]));
     const found = [], missing = [];
