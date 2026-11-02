@@ -218,6 +218,17 @@ def test_trade_one_for_one(valued):
     assert set(res.improved) | set(res.hurt) <= set(cats.index)
 
 
+def test_trade_one_for_two_auto_drops_my_worst(valued):
+    my = list(valued.index[:13])
+    get = [valued.index[20], valued.index[21]]
+    res = analyze_trade(valued, my, give=[my[0]], get=get)
+    worst = valued.loc[my[1:], "z_total"].idxmin()
+    assert res.dropped == [worst]
+    assert res.roster_size_change == 0
+    no_drop = analyze_trade(valued, my, give=[my[0]], get=get, auto_drop=False)
+    assert no_drop.dropped == [] and no_drop.roster_size_change == 1
+
+
 def test_trade_two_for_one_and_partner_side(valued):
     my = list(valued.index[:13])
     theirs = list(valued.index[13:26])
