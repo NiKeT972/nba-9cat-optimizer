@@ -43,4 +43,4 @@ else:
     st.plotly_chart(backtest_improvement_bars(summary), use_container_width=True, theme="streamlit")
     md = path.with_suffix(".md")
     if md.exists():
-        st.markdown(md.read_text())
+        st.markdown(md.read_text(encoding="utf-8"))

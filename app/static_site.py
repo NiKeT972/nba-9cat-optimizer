@@ -234,7 +234,7 @@ Python, pandas, NumPy, scikit-learn, Plotly, Streamlit · Data: stats.nba.com vi
 </html>"""
     config.SITE_DIR.mkdir(parents=True, exist_ok=True)
     out = config.SITE_DIR / "index.html"
-    out.write_text(page)
+    out.write_text(page, encoding="utf-8")  # explicit: Windows defaults to cp1252, which cannot encode the page
     return str(out)
 
 
