@@ -106,3 +106,21 @@ CAT_COLUMNS: dict[str, str] = {
     "PTS": "pts", "REB": "reb", "AST": "ast", "STL": "stl", "BLK": "blk", "FG3M": "fg3m", "TOV": "tov",
 }
 PCT_COLUMNS: dict[str, tuple[str, str]] = {"FG_PCT": ("fgm", "fga"), "FT_PCT": ("ftm", "fta")}
+
+# ---------------------------------------------------------------------------
+# Decision tools (roster, start/sit, waivers, trades)
+# ---------------------------------------------------------------------------
+ROSTER_FILE: Path = DATA_DIR / "my_rosters.json"
+MY_TEAM: str = "My Team"
+OPPONENT: str = "Opponent"
+OTHER_ROSTERED: str = "Other rostered players"  # everyone owned by the other 10 teams
+
+WEEK_START_WEEKDAY: int = 0  # fantasy weeks run Monday (0) .. Sunday
+ACTIVE_LINEUP_SLOTS: int = 10  # daily starting slots (positions ignored)
+
+# Waiver "need" weighting. Each category gets weight
+#     w = 2 / (1 + exp(team_z / WAIVER_NEED_SCALE))
+# so a category where my team's summed z is very negative -> ~2, average -> 1,
+# dominant -> ~0. Larger scale = flatter weights (closer to plain z-value ranking).
+WAIVER_NEED_SCALE: float = 3.0
+WAIVER_TOP_N: int = 25
