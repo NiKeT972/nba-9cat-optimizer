@@ -141,9 +141,13 @@ def _download_schedule(season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def fetch_player_game_logs(season: str = config.SEASON, force: bool = False) -> pd.DataFrame:
-    """Raw league-wide player game logs for ``season`` (cached)."""
+    """Raw league-wide player game logs for ``season`` (cached).
+
+    Completed past seasons never change, so their cache never expires.
+    """
     path = config.RAW_DIR / f"player_game_logs_{season}.parquet"
-    return cached_fetch(path, lambda: _download_player_game_logs(season), force=force)
+    ttl = config.CACHE_TTL_HOURS if season == config.SEASON else float("inf")
+    return cached_fetch(path, lambda: _download_player_game_logs(season), force=force, ttl_hours=ttl)
 
 
 def fetch_schedule(season: str = config.SEASON, force: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
