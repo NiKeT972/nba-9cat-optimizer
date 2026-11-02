@@ -3,15 +3,14 @@
   "use strict";
   const NC = window.NineCat;
   const STORE = "ninecat:v1";
-  const ROSTERS = [
-    { key: "my", title: "My team", file: "My Team" },
-    { key: "opp", title: "This week's opponent", file: "Opponent" },
-    { key: "other", title: "Everyone else rostered in my league", file: "Other rostered players" },
-  ];
+  const POWER_STORE = "ninecat:power";
+  const LEGACY_FILE = { my: "My Team", opp: "Opponent", other: "Other rostered players" };
 
   let D, cfg, CATS, L, players, pmap;
   const state = {
-    rosters: { my: [], opp: [], other: [] }, punt: [], includeToday: true, tab: "rankings",
+    league: { teams: [], me: null, opp: null, pool: [], waivers: [] },
+    rosters: { my: [], opp: [], other: [], waivers: [] }, // derived from league by syncRosters()
+    punt: [], includeToday: true, tab: "rankings", leagueView: "game",
     rank: { q: "", team: "", fa: false, active: true, view: "z", limit: 100, sort: null },
     waiver: { mode: "season", active: true }, trade: { give: [], get: [], partner: [] },
     sim: { n: null, inactive: true, wtd: true, result: null, key: null },
@@ -45,18 +44,69 @@
   const today = () => { const t = todayET(); return D.as_of && t < D.as_of ? D.as_of : t; };
   const niceDate = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 
+  // ---------------------------------------------------------------- league model
+  // The league is the source of truth: named teams, plus players on waivers and an optional
+  // pool of rostered players not assigned to a team. state.rosters is derived from it.
+  const newId = () => "t" + Math.random().toString(36).slice(2, 9);
+  const team = (id) => state.league.teams.find((t) => t.id === id) || null;
+  function ensureMyTeam() {
+    const lg = state.league;
+    if (!team(lg.me)) {
+      const t = { id: newId(), name: "My team", players: [] };
+      lg.teams.unshift(t); lg.me = t.id;
+    }
+    if (lg.opp === lg.me || (lg.opp && !team(lg.opp))) lg.opp = null;
+  }
+  function syncRosters() {
+    ensureMyTeam();
+    const lg = state.league, me = team(lg.me), op = team(lg.opp);
+    state.rosters = {
+      my: me.players, opp: op ? op.players : [],
+      other: lg.teams.filter((t) => t !== me && t !== op).flatMap((t) => t.players).concat(lg.pool),
+      waivers: lg.waivers,
+    };
+  }
+  /** Move a player: target = team id, "pool", "waivers", or null (remove everywhere). */
+  function assign(id, target) {
+    const lg = state.league;
+    for (const t of lg.teams) t.players = t.players.filter((x) => x !== id);
+    lg.pool = lg.pool.filter((x) => x !== id); lg.waivers = lg.waivers.filter((x) => x !== id);
+    if (target === "pool") lg.pool.push(id);
+    else if (target === "waivers") lg.waivers.push(id);
+    else if (target) team(target)?.players.push(id);
+  }
+  const listOf = (target) => (target === "pool" ? state.league.pool : target === "waivers" ? state.league.waivers : team(target)?.players || []);
+  function ownerMap() {
+    const m = new Map();
+    for (const t of state.league.teams) for (const id of t.players) m.set(id, t);
+    return m;
+  }
+  function cleanLeague(lg) {
+    const ok = (ids) => (ids || []).map(Number).filter((id) => pmap.has(id));
+    return { teams: (lg.teams || []).map((t) => ({ id: t.id || newId(), name: String(t.name || "Team"), players: ok(t.players) })),
+      me: lg.me || null, opp: lg.opp || null, pool: ok(lg.pool), waivers: ok(lg.waivers) };
+  }
+  function fromLegacy(r) {
+    const me = { id: newId(), name: "My team", players: (r.my || []).filter((id) => pmap.has(id)) };
+    const teams = [me]; let opp = null;
+    if ((r.opp || []).length) { const o = { id: newId(), name: "Opponent", players: r.opp.filter((id) => pmap.has(id)) }; teams.push(o); opp = o.id; }
+    return { teams, me: me.id, opp, pool: (r.other || []).filter((id) => pmap.has(id)), waivers: [] };
+  }
+
   function save() {
-    try { localStorage.setItem(STORE, JSON.stringify({ rosters: state.rosters, punt: state.punt, includeToday: state.includeToday, tab: state.tab })); } catch (e) { /* private mode */ }
+    try { localStorage.setItem(STORE, JSON.stringify({ league: state.league, punt: state.punt, includeToday: state.includeToday, tab: state.tab })); } catch (e) { /* private mode */ }
   }
   function load() {
     let s = {};
     try {
       s = JSON.parse(localStorage.getItem(STORE) || "{}");
-      if (s.rosters) for (const k of ["my", "opp", "other"]) state.rosters[k] = (s.rosters[k] || []).filter((id) => pmap.has(id));
+      if (s.league) state.league = cleanLeague(s.league);
+      else if (s.rosters) state.league = fromLegacy(s.rosters);
       if (Array.isArray(s.punt)) state.punt = s.punt.filter((c) => CATS.includes(c));
       if (typeof s.includeToday === "boolean") state.includeToday = s.includeToday;
       if (s.tab) state.tab = s.tab;
     } catch (e) { /* ignore */ }
+    syncRosters();
     const hash = location.hash.slice(1);
     if (hash) state.tab = hash;
     else if (!s.tab) state.tab = state.rosters.my.length ? "advisor" : "rankings";
@@ -212,12 +262,12 @@
     document.querySelectorAll(".tab").forEach((s) => (s.hidden = s.id !== "tab-" + state.tab));
     charts.length = 0;
     const el = document.getElementById("tab-" + state.tab);
-    const fn = { advisor: renderAdvisor, rankings: renderRankings, team: renderTeam, waivers: renderWaivers, trade: renderTrade, matchup: renderMatchup, about: renderAbout }[state.tab];
+    const fn = { advisor: renderAdvisor, rankings: renderRankings, team: renderTeam, league: renderLeague, waivers: renderWaivers, trade: renderTrade, matchup: renderMatchup, about: renderAbout }[state.tab];
     el.replaceChildren(...[].concat(fn ? fn() : renderRankings()).filter((x) => x !== null && x !== undefined && x !== false));
     charts.forEach((d) => d()); // charts can only draw once their container is in the page
   }
   function setTab(t) { state.tab = t; history.replaceState(null, "", "#" + t); save(); render(); window.scrollTo({ top: 0 }); }
-  function changed() { save(); render(); }
+  function changed() { syncRosters(); save(); render(); }
   const needData = () => h("div", { class: "empty" }, "No player data in this build yet. Run ", h("code", {}, "python -m src.data.pipeline"),
     " then ", h("code", {}, "python -m app.static_site"), " and push.");
   const needRoster = () => h("div", { class: "empty" }, "Add your players on the ", h("a", { href: "#team", onclick: (e) => { e.preventDefault(); setTab("team"); } }, "My Team"), " tab first.");
@@ -248,7 +298,8 @@
     }
     return [h("h2", {}, "Advisor"),
       h("p", { class: "lede" }, "Plain-language roster decisions for this week, ranked by impact. Every suggestion is backed by the projections and a re-run of your matchup simulation."),
-      !state.rosters.other.length ? h("div", { class: "warn" }, "Tip: add the rest of your league's rosters on My Team, so the advisor only suggests players who are actually available.") : null,
+      !state.rosters.other.length ? h("div", { class: "warn" }, "Tip: add the other teams on the ", h("a", { href: "#league", onclick: (e) => { e.preventDefault(); setTab("league"); } }, "League"),
+        " tab, so the advisor only suggests players who are actually available.") : null,
       holder];
   }
 
@@ -271,7 +322,7 @@
             m.myGames < m.oppGames ? " You're behind on volume, so a streamer with extra games helps." : ""))));
     } else if (!state.rosters.opp.length) {
       cards.push(h("div", { class: "acard" }, h("h3", {}, "This week's matchup"),
-        h("p", {}, "Add this week's opponent on My Team to get matchup advice and to test every move against them.")));
+        h("p", {}, "Pick this week's opponent on My Team (or the League tab) to get matchup advice and to test every move against them.")));
     }
 
     // Waiver moves
@@ -279,20 +330,21 @@
     cards.push(h("div", { class: "acard" }, h("h3", {}, "Waiver moves"),
       moves.length ? moves.map((mv) => h("div", { class: "rec" },
         h("div", {},
-          h("div", { class: "what" }, "Add ", h("b", {}, mv.addName), ", drop ", h("b", {}, mv.dropName)),
+          h("div", { class: "what" }, mv.claim ? "Put in a claim for " : "Add ", h("b", {}, mv.addName),
+            mv.claim ? h("span", { class: "tag" }, "waivers") : h("span", { class: "tag" }, "FA"), ", drop ", h("b", {}, mv.dropName)),
           h("div", { class: "why" },
             mv.helps.length ? ["Helps ", catList(mv.helps), " · "] : null,
             "season value ", pill(sg(mv.gain), mv.gain >= 0 ? "good" : "bad"),
             mv.dExpected !== undefined ? [" · this week ", Math.abs(mv.dExpected) < 0.05 ? pill("±0.0 cats", "neutral")
               : pill(`${sg(mv.dExpected, 1)} cats`, mv.dExpected > 0 ? "good" : "bad"),
               ` win chance ${pct(a.matchup.pWin)} → ${pct(a.matchup.pWin + mv.dWin)}`] : null,
-            mv.games !== null ? ` · ${mv.games} games this week vs ${mv.dropGames}` : null)),
+            mv.games !== null ? ` · ${mv.games} games this week vs ${mv.dropGames}` : null,
+            mv.claim ? ` · claim clears ${niceDate(mv.claimDate)}, so earlier games don't count` : null)),
         h("button", { class: "btn primary small", type: "button", onclick: () => {
-          if (!confirm(`Add ${mv.addName} and drop ${mv.dropName} on your roster here?`)) return;
-          for (const k of Object.keys(state.rosters)) state.rosters[k] = state.rosters[k].filter((x) => x !== mv.add);
-          state.rosters.my = state.rosters.my.filter((x) => x !== mv.drop).concat(mv.add);
+          if (!confirm(`${mv.claim ? "Claim" : "Add"} ${mv.addName} and drop ${mv.dropName}? (${mv.dropName} goes on waivers.)`)) return;
+          assign(mv.add, state.league.me); assign(mv.drop, "waivers");
           changed();
-        } }, "Make this move")))
+        } }, mv.claim ? "Mark as claimed" : "Make this move")))
         : h("p", { class: "dim" }, "No free agent clearly beats your weakest player right now. Hold your roster.")));
 
     // Lineup
@@ -321,7 +373,7 @@
         h("button", { class: "btn small", type: "button", onclick: () => { state.trade.give = [t.give]; state.trade.get = [t.get]; setTab("trade"); } }, "Open in Trade")))
         : h("p", { class: "dim" }, state.rosters.other.length || state.rosters.opp.length
           ? "No fair 1-for-1 trade clearly improves your weak categories right now."
-          : "Add other teams' rosters on My Team to get trade ideas.")));
+          : "Add the other teams on the League tab to get trade ideas.")));
 
     // Strategy
     const weakest = CATS.filter((c) => !state.punt.includes(c)).sort((x, y) => a.teamZ[x] - a.teamZ[y]).slice(0, 2);
@@ -342,11 +394,14 @@
     if (!players.length) return [h("h2", {}, "Player rankings"), needData()];
     const { rows } = valued(); const S = state.rank;
     const mine = new Set(state.rosters.my); const taken = new Set([...state.rosters.my, ...state.rosters.opp, ...state.rosters.other]);
+    const owners = ownerMap(); const onW = new Set(state.league.waivers);
+    const status = (id) => (owners.has(id) ? owners.get(id).name : onW.has(id) ? "Waivers" : taken.has(id) ? "Rostered" : "FA");
+    const avail = { all: () => true, available: (id) => !taken.has(id), fa: (id) => !taken.has(id) && !onW.has(id), waivers: (id) => onW.has(id) };
     const teams = [...new Set(players.map((p) => p.team))].sort();
     const holder = h("div");
     const draw = () => {
       const q = NC.norm(S.q);
-      let list = rows.filter((r) => (!q || NC.norm(r.name).includes(q)) && (!S.team || r.team === S.team) && (!S.fa || !taken.has(r.id)) && (!S.active || r.active));
+      let list = rows.filter((r) => (!q || NC.norm(r.name).includes(q)) && (!S.team || r.team === S.team) && avail[S.avail || "all"](r.id) && (!S.active || r.active));
       if (S.sort) {
         const [kind, k] = S.sort.split(":");
         list = [...list].sort((a, b) => (kind === "z" ? b.z[k] - a.z[k] : (kind === "s" ? statVal(b, k) - statVal(a, k) : 0)));
@@ -357,6 +412,7 @@
         { label: "#", cls: "num dim", get: (r) => r.rank },
         { label: "Player", get: (r) => [r.name, mine.has(r.id) ? h("span", { class: "tag" }, "mine") : null] },
         { label: "Team", get: (r) => r.team },
+        { label: "Status", get: (r) => { const st = status(r.id); return st === "FA" || st === "Waivers" ? h("span", { class: "tag" }, st) : h("span", { class: "dim" }, st); } },
         { label: "GP", cls: "num", get: (r) => r.games },
         { label: "MPG", cls: "num", get: (r) => f1(r.min) },
         { label: "Value", cls: "num strong", get: (r) => sg(r.total), style: (r) => zStyle(r.total / 3), sort: true, key: "v:" },
@@ -372,7 +428,9 @@
     const controls = h("div", { class: "controls" },
       h("input", { class: "input", type: "search", placeholder: "Search player…", value: S.q, oninput: (e) => { S.q = e.target.value; draw(); } }),
       h("select", { class: "input", onchange: (e) => { S.team = e.target.value; draw(); } }, h("option", { value: "" }, "All teams"), teams.map((t) => h("option", { value: t, selected: t === S.team }, t))),
-      h("label", { class: "switch" }, h("input", { type: "checkbox", checked: S.fa, onchange: (e) => { S.fa = e.target.checked; draw(); } }), h("span", {}, "Free agents only")),
+      h("select", { class: "input", onchange: (e) => { S.avail = e.target.value; draw(); } },
+        [["all", "All players"], ["available", "Available (FA + waivers)"], ["fa", "Free agents only"], ["waivers", "On waivers only"]]
+          .map(([v, lab]) => h("option", { value: v, selected: v === (S.avail || "all") }, lab))),
       h("label", { class: "switch" }, h("input", { type: "checkbox", checked: S.active, onchange: (e) => { S.active = e.target.checked; draw(); } }), h("span", {}, "Active only")),
       seg([["z", "Z-scores"], ["stats", "Per-game stats"]], S.view, (v) => { S.view = v; draw(); }));
     draw();
@@ -387,34 +445,48 @@
   }
 
   // ---------------------------------------------------------------- My Team
-  function rosterEditor({ key, title }) {
-    const { map } = valued(); const ids = state.rosters[key];
-    const add = (id) => { for (const k of Object.keys(state.rosters)) state.rosters[k] = state.rosters[k].filter((x) => x !== id); state.rosters[key].push(id); changed(); refocus(key); };
+  function listEditor({ target, title, head = null, placeholder, empty = "No players yet." }) {
+    const { map } = valued(); const ids = listOf(target); const key = "pick-" + target;
+    const add = (id) => { assign(id, target); changed(); refocus(key); };
     const ta = h("textarea", { class: "input", placeholder: "Paste names, one per line (e.g. copied from Yahoo/ESPN). Positions and injury tags are ignored." });
     return h("div", { class: "card roster" },
-      h("div", { class: "roster-head" }, h("h3", {}, title), h("span", { class: "dim" }, `${ids.length} players`)),
-      picker(key, { pool: () => valued().rows.filter((p) => !ids.includes(p.id)), onAdd: add,
-        placeholder: key === "other" ? "Add players owned by the other teams…" : "Search a player to add…" }),
+      head || h("div", { class: "roster-head" }, h("h3", {}, title), h("span", { class: "dim" }, `${ids.length} players`)),
+      picker(key, { pool: () => valued().rows.filter((p) => !ids.includes(p.id)), onAdd: add, placeholder: placeholder || "Search a player to add…" }),
       h("div", { class: "picked" }, ids.length ? ids.map((id) => h("span", { class: "pchip" }, map.get(id)?.name || id,
-        h("button", { type: "button", "aria-label": "Remove", onclick: () => { state.rosters[key] = ids.filter((x) => x !== id); changed(); } }, "×")))
-        : h("span", { class: "dim" }, "No players yet.")),
+        h("button", { type: "button", "aria-label": "Remove", onclick: () => { assign(id, null); changed(); } }, "×")))
+        : h("span", { class: "dim" }, empty)),
       h("details", { class: "paste" }, h("summary", {}, "Paste a list of names"), ta,
         h("div", { class: "controls" },
           h("button", { class: "btn primary small", type: "button", onclick: () => {
             const { found, missing } = NC.matchNames(ta.value.split(/\n|,|;/), valued().rows);
-            for (const id of found) if (!state.rosters[key].includes(id)) { for (const k of Object.keys(state.rosters)) state.rosters[k] = state.rosters[k].filter((x) => x !== id); state.rosters[key].push(id); }
-            save(); render();
+            for (const id of found) if (!listOf(target).includes(id)) assign(id, target);
+            changed();
             if (missing.length) alert(`Added ${found.length}. Not found: ${missing.join(", ")}`);
           } }, "Add names"),
-          ids.length ? h("button", { class: "btn small", type: "button", onclick: () => { if (confirm(`Clear ${title}?`)) { state.rosters[key] = []; changed(); } } }, "Clear list") : null)));
+          ids.length ? h("button", { class: "btn small", type: "button", onclick: () => { if (confirm(`Clear ${title || "this list"}?`)) { [...ids].forEach((id) => assign(id, null)); changed(); } } }, "Clear list") : null)));
+  }
+  function opponentPicker() {
+    const lg = state.league; const choices = lg.teams.filter((t) => t.id !== lg.me);
+    return h("select", { class: "input", onchange: (e) => {
+      const v = e.target.value;
+      if (v === "__new") { const t = { id: newId(), name: `Team ${lg.teams.length + 1}`, players: [] }; lg.teams.push(t); lg.opp = t.id; }
+      else lg.opp = v || null;
+      changed();
+    } }, h("option", { value: "" }, "— choose this week's opponent —"),
+      choices.map((t) => h("option", { value: t.id, selected: t.id === lg.opp }, `${t.name} (${t.players.length})`)),
+      h("option", { value: "__new" }, "+ New team"));
   }
 
   function renderTeam() {
     if (!players.length) return [h("h2", {}, "My team"), needData()];
     const out = [h("h2", {}, "My team"),
-      h("p", { class: "lede" }, "Rosters are saved in this browser. Anyone not listed below is treated as a free agent."),
-      h("div", { class: "grid2" }, rosterEditor(ROSTERS[0]), rosterEditor(ROSTERS[1])),
-      h("div", { style: "margin-top:16px" }, rosterEditor(ROSTERS[2])),
+      h("p", { class: "lede" }, "Rosters are saved in this browser. Add every team in your league on the ",
+        h("a", { href: "#league", onclick: (e) => { e.preventDefault(); setTab("league"); } }, "League"), " tab; anyone not on a team is a free agent (or on waivers, if you list them)."),
+      h("div", { class: "grid2" },
+        listEditor({ target: state.league.me, title: team(state.league.me).name }),
+        h("div", { class: "card roster" }, h("div", { class: "roster-head" }, h("h3", {}, "This week's opponent")), opponentPicker(),
+          state.league.opp ? listEditor({ target: state.league.opp, title: team(state.league.opp).name }) : h("p", { class: "dim" }, "Pick a team from your league, or create one."))),
+      state.league.pool.length ? h("div", { style: "margin-top:16px" }, listEditor({ target: "pool", title: "Other rostered players (not assigned to a team)" })) : null,
       h("div", { class: "controls" },
         h("button", { class: "btn small", type: "button", onclick: exportRosters }, "Download rosters (JSON)"),
         h("label", { class: "btn small" }, "Load rosters (JSON)", h("input", { type: "file", accept: "application/json,.json", hidden: true, onchange: importRosters })))];
@@ -464,9 +536,16 @@
   const metric = (label, value) => h("div", { class: "metric" }, h("span", {}, label), h("b", {}, value));
 
   function exportRosters() {
-    const { map } = valued();
-    const data = Object.fromEntries(ROSTERS.map((r) => [r.file, state.rosters[r.key].map((id) => ({ player_id: id, name: map.get(id)?.name || "" }))]));
-    const a = h("a", { href: URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })), download: "my_rosters.json" });
+    const { map } = valued(); const lg = state.league;
+    const named = (ids) => ids.map((id) => ({ player_id: id, name: map.get(id)?.name || "" }));
+    const data = {
+      format: "ninecat-league-v1",
+      league: { teams: lg.teams.map((t) => ({ id: t.id, name: t.name, players: named(t.players) })), me: lg.me, opp: lg.opp,
+        pool: named(lg.pool), waivers: named(lg.waivers) },
+      // the same rosters in the Python/Streamlit app's format
+      [LEGACY_FILE.my]: named(state.rosters.my), [LEGACY_FILE.opp]: named(state.rosters.opp), [LEGACY_FILE.other]: named(state.rosters.other),
+    };
+    const a = h("a", { href: URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })), download: "my_league.json" });
     document.body.append(a); a.click(); a.remove();
   }
   function importRosters(e) {
@@ -474,10 +553,105 @@
     file.text().then((txt) => {
       try {
         const data = JSON.parse(txt);
-        for (const r of ROSTERS) state.rosters[r.key] = (data[r.file] || []).map((p) => Number(p.player_id)).filter((id) => pmap.has(id));
+        const ids = (list) => (list || []).map((p) => Number(typeof p === "object" ? p.player_id : p));
+        if (data.league) {
+          const lg = data.league;
+          state.league = cleanLeague({ ...lg, teams: lg.teams.map((t) => ({ ...t, players: ids(t.players) })), pool: ids(lg.pool), waivers: ids(lg.waivers) });
+        } else {
+          state.league = fromLegacy({ my: ids(data[LEGACY_FILE.my]), opp: ids(data[LEGACY_FILE.opp]), other: ids(data[LEGACY_FILE.other]) });
+        }
         changed();
-      } catch (err) { alert("That file isn't a rosters JSON."); }
+      } catch (err) { alert("That file isn't a rosters/league JSON."); }
     });
+  }
+
+
+  // ---------------------------------------------------------------- League
+  function powerHistory(weekStart, table) {
+    // Keep each week's latest ranks so the table can show movement since last week.
+    let hist = {};
+    try { hist = JSON.parse(localStorage.getItem(POWER_STORE) || "{}"); } catch (e) { /* ignore */ }
+    const prevWeek = Object.keys(hist).filter((w) => w < weekStart).sort().pop();
+    hist[weekStart] = Object.fromEntries(table.map((t) => [t.id, t.rank]));
+    try { localStorage.setItem(POWER_STORE, JSON.stringify(hist)); } catch (e) { /* ignore */ }
+    return prevWeek ? hist[prevWeek] : null;
+  }
+  const rankStyle = (rank, n) => zStyle(((n + 1) / 2 - rank) / ((n - 1) / 2 || 1) * 2.5);
+  const record = (r) => (r ? `${r.w}-${r.l}-${r.t}` : "–");
+
+  function teamCard(t) {
+    const lg = state.league; const isMe = t.id === lg.me, isOpp = t.id === lg.opp;
+    const head = h("div", { class: "roster" },
+      h("div", { class: "roster-head" },
+        h("input", { class: "team-name", value: t.name, "aria-label": "Team name", onchange: (e) => { t.name = e.target.value.trim() || t.name; changed(); } }),
+        h("span", { class: "dim" }, `${t.players.length}`)),
+      h("div", { class: "team-actions" },
+        isMe ? h("span", { class: "tag me-tag" }, "You") : h("button", { class: "btn small", type: "button", onclick: () => { lg.me = t.id; if (lg.opp === t.id) lg.opp = null; changed(); } }, "This is me"),
+        isMe ? null : isOpp ? h("span", { class: "tag" }, "Opponent this week")
+          : h("button", { class: "btn small", type: "button", onclick: () => { lg.opp = t.id; changed(); } }, "Opponent this week"),
+        isMe ? null : h("button", { class: "btn small", type: "button", onclick: () => {
+          if (!confirm(`Delete ${t.name}? Its players become free agents.`)) return;
+          lg.teams = lg.teams.filter((x) => x !== t); changed(); } }, "Delete")));
+    return listEditor({ target: t.id, title: t.name, head });
+  }
+
+  function renderLeague() {
+    if (!players.length) return [h("h2", {}, "League"), needData()];
+    const lg = state.league; const { rows } = valued(); const t = today();
+    const addTeam = (n = 1) => { for (let k = 0; k < n; k++) lg.teams.push({ id: newId(), name: `Team ${lg.teams.length + 1}`, players: [] }); changed(); };
+    const out = [h("h2", {}, "League"),
+      h("p", { class: "lede" }, "Add every team in your league. The app then rates each team in all nine categories, builds weekly power rankings, and knows exactly who is available.")];
+
+    const filled = lg.teams.filter((x) => x.players.length);
+    if (filled.length >= 2) {
+      const table = NC.leagueTable(rows, lg.teams, D.schedule || [], t, cfg, { includeToday: state.includeToday });
+      const n = table.length; const hasWeek = table.some((x) => x.weekRecord);
+      const prev = powerHistory(NC.weekWindow(t, state.includeToday, cfg).weekStart, table);
+      const tag = (x) => (x.id === lg.me ? h("span", { class: "tag me-tag" }, "you") : x.id === lg.opp ? h("span", { class: "tag" }, "opponent") : null);
+      const moveCell = (x) => {
+        if (!prev || prev[x.id] === undefined) return h("span", { class: "dim" }, "–");
+        const d = prev[x.id] - x.rank;
+        return d > 0 ? h("span", { class: "move up" }, `▲${d}`) : d < 0 ? h("span", { class: "move down" }, `▼${-d}`) : h("span", { class: "dim" }, "=");
+      };
+      out.push(h("h3", {}, "Power rankings"),
+        table_(["Rank", "±", "Team", "All-play (season)", "Win %", hasWeek ? "This week" : null, hasWeek ? "Starts left" : null, "Total z", ...CATS.map((c) => L[c])].filter(Boolean), table.map((x) => [
+          { v: x.rank, cls: "num strong" }, { v: moveCell(x) }, { v: [x.name, tag(x)] },
+          { v: record(x.perGameRecord), cls: "num" }, { v: pct(x.perGameRecord.pct), cls: "num strong", style: rankStyle(x.rank, n) },
+          hasWeek ? { v: `#${x.weekRank} · ${pct(x.weekRecord.pct)}`, cls: "num", style: rankStyle(x.weekRank, n) } : null,
+          hasWeek ? { v: x.started, cls: "num" } : null,
+          { v: sg(x.total), cls: "num" },
+          ...CATS.map((c) => ({ v: x.catRank[c], cls: "num", style: rankStyle(x.catRank[c], n) })),
+        ].filter(Boolean)), (x) => (x.id === lg.me ? "mine" : null)),
+        h("p", { class: "note" }, `All-play: each team's projected per-game line compared with every other team in all 9 categories (wins-losses-ties). "This week" uses each roster's projected totals for the games it can still start this week. Category columns show each team's rank (1 = best of ${n}). ▲▼ = movement since last week's rankings on this device.`));
+
+      const V = state.leagueView;
+      const stat = (x, c) => { const line = V === "week" && x.week ? x.week : x.perGame; return isPct(c) ? f3(line[c]) : V === "week" ? f1(line[c]) : f1(line[c]); };
+      out.push(h("div", { class: "controls", style: "margin-top:24px" }, h("h3", { style: "margin:0" }, "Projected team stats"),
+          seg([["game", "Per game"], ["week", "This week"]], V, (v) => { state.leagueView = v; render(); })),
+        table_(["Team", ...CATS.map((c) => L[c])], table.map((x) => [{ v: [x.name, tag(x)] },
+          ...CATS.map((c) => ({ v: stat(x, c), cls: "num", style: rankStyle(x.catRank[c], n) }))]), (x) => null),
+        h("p", { class: "note" }, "Per game: sum of each player's projected per-game stats (FG%/FT% from total makes ÷ attempts). This week: projected totals over the games each team can start. Shading follows the season category rank."));
+    } else {
+      out.push(h("div", { class: "empty" }, "Add at least two teams with players to see power rankings and category ratings."));
+    }
+
+    out.push(h("div", { class: "controls", style: "margin-top:28px" }, h("h3", { style: "margin:0" }, `Teams (${lg.teams.length})`),
+      h("button", { class: "btn primary small", type: "button", onclick: () => addTeam(1) }, "+ Add team"),
+      lg.teams.length < cfg.num_teams ? h("button", { class: "btn small", type: "button", onclick: () => addTeam(cfg.num_teams - lg.teams.length) },
+        `Create the rest of a ${cfg.num_teams}-team league`) : null,
+      h("button", { class: "btn small", type: "button", onclick: exportRosters }, "Download league (JSON)"),
+      h("label", { class: "btn small" }, "Load league (JSON)", h("input", { type: "file", accept: "application/json,.json", hidden: true, onchange: importRosters }))),
+      h("div", { class: "team-grid" }, lg.teams.map(teamCard),
+        listEditor({ target: "waivers", title: "On waivers", placeholder: "Add a player who is on waivers…",
+          empty: "Nobody marked. Players on no team count as free agents." }),
+        lg.pool.length ? listEditor({ target: "pool", title: "Rostered, team unknown" }) : null));
+    return out;
+  }
+  /** Small table helper: header labels + rows of {v, cls, style} cells. */
+  function table_(head, rowsData, rowClass) {
+    return h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, head.map((x) => h("th", {}, x)))),
+      h("tbody", {}, rowsData.map((cells, i) => h("tr", {}, cells.map((c) => h("td", { class: c.cls || null, style: c.style || null }, c.v)))))));
   }
 
   // ---------------------------------------------------------------- Waivers
@@ -490,10 +664,11 @@
       const w = NC.weekWindow(today(), state.includeToday, cfg);
       gamesLeft = NC.gamesRemaining(rows, rows.map((r) => r.id), D.schedule, w.start, w.end);
     }
-    const rostered = [...state.rosters.opp, ...state.rosters.other];
+    const onW = new Set(state.league.waivers);
+    const rostered = [...state.rosters.opp, ...state.rosters.other, ...(S.includeW === false ? state.league.waivers : [])];
     const res = NC.rankWaivers(rows, state.rosters.my, rostered, cfg, { punt: state.punt, gamesLeft, onlyActive: S.active });
     const top = res.rows.slice(0, cfg.waiver_top_n * 2);
-    const cols = [{ label: "Player", get: (r) => r.name }, { label: "Team", get: (r) => r.team }];
+    const cols = [{ label: "Player", get: (r) => [r.name, h("span", { class: "tag" }, onW.has(r.id) ? "waivers" : "FA")] }, { label: "Team", get: (r) => r.team }];
     if (gamesLeft) cols.push({ label: "Games", cls: "num", get: (r) => r.games }, { label: "Weekly fit", cls: "num strong", get: (r) => sg(r.weeklyFit), style: (r) => zStyle(r.weeklyFit / 8) });
     cols.push({ label: "Fit", cls: "num" + (gamesLeft ? "" : " strong"), get: (r) => sg(r.fit), style: (r) => zStyle(r.fit / 3) },
       { label: "Net gain", cls: "num", get: (r) => sg(r.netGain), style: (r) => zStyle(r.netGain / 3) },
@@ -501,13 +676,16 @@
       { label: "Value", cls: "num", get: (r) => sg(r.total) }, ...zCols((r) => r.z));
     return [h("h2", {}, "Waivers"),
       h("p", { class: "lede" }, "Free agents ranked by how much they help your weakest categories, not just raw value."),
-      !state.rosters.other.length ? h("div", { class: "warn" }, "You haven't added the rest of your league's rosters (My Team tab), so everyone except your team and your opponent counts as a free agent.") : null,
+      !state.rosters.other.length ? h("div", { class: "warn" }, "You haven't added the other teams (League tab), so everyone except your team and your opponent counts as available.") : null,
       h("div", { class: "controls" },
         seg([["season", "Season-long fit"], ["week", "This week (streaming)"]], S.mode, (v) => { S.mode = v; render(); }),
-        h("label", { class: "switch" }, h("input", { type: "checkbox", checked: S.active, onchange: (e) => { S.active = e.target.checked; render(); } }), h("span", {}, "Active only"))),
+        h("label", { class: "switch" }, h("input", { type: "checkbox", checked: S.active, onchange: (e) => { S.active = e.target.checked; render(); } }), h("span", {}, "Active only")),
+        h("label", { class: "switch" }, h("input", { type: "checkbox", checked: S.includeW !== false, onchange: (e) => { S.includeW = e.target.checked; render(); } }), h("span", {}, "Include players on waivers"))),
+      h("details", { style: "margin:8px 0 12px" }, h("summary", { class: "dim", style: "cursor:pointer" }, `Players on waivers in my league (${state.league.waivers.length})`),
+        listEditor({ target: "waivers", title: "On waivers", placeholder: "Add a player who is on waivers…", empty: "Nobody marked as on waivers. Everyone unrostered counts as a free agent." })),
       h("p", {}, h("b", {}, "Category weights for your team: "), CATS.map((c) => `${L[c]} ×${res.weights[c].toFixed(2)}`).join(" · ")),
       table(cols, top),
-      h("p", { class: "note" }, "Fit = Σ (category weight × player z). Weights run from ×2 for your weakest categories to ×0 for ones you dominate or punt. Net gain = fit − fit of your weakest-fit player (the suggested drop).")];
+      h("p", { class: "note" }, "Fit = Σ (category weight × player z). Weights run from ×2 for your weakest categories to ×0 for ones you dominate or punt. Net gain = fit − fit of your lowest-value player (the suggested drop).")];
   }
 
   // ---------------------------------------------------------------- Trade
@@ -628,7 +806,7 @@
   function boot(data) {
     D = data; cfg = D.cfg; CATS = cfg.categories; L = cfg.labels;
     players = D.players || []; pmap = NC.byId(players);
-    load();
+    load(); save(); // persist any migration of older saved rosters right away
     document.getElementById("data-status").textContent = players.length
       ? `${D.season} · ${players.length} players · data through ${niceDate(D.through)}` : `${D.season} · no player data yet`;
     document.getElementById("punt-chips").replaceChildren(...CATS.map((c) => h("button", { type: "button", class: "chip", "aria-pressed": String(state.punt.includes(c)),

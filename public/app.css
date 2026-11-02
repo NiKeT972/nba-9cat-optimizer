@@ -137,3 +137,13 @@ details.paste summary { cursor: pointer; color: var(--accent); font-size: 14px; 
 .pill.good { background: rgba(var(--good), .15); color: rgb(var(--good)); }
 .pill.bad { background: rgba(var(--bad), .15); color: rgb(var(--bad)); }
 .pill.neutral { background: var(--surface2); color: var(--ink2); }
+
+/* league */
+.team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.team-name { font-weight: 600; font-size: 15px; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 3px 6px; margin-left: -6px; width: 100%; }
+.team-name:hover, .team-name:focus { border-color: var(--line); background: var(--bg); }
+.team-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.me-tag { background: var(--accent); color: var(--on-accent); }
+.move { font-size: 12px; font-weight: 600; }
+.move.up { color: rgb(var(--good)); }
+.move.down { color: rgb(var(--bad)); }

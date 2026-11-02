@@ -5,7 +5,7 @@
 Built for my own 12-team, 9-cat H2H league (PTS, REB, AST, STL, BLK, 3PM, FG%, FT%, TO), and used every week to set
 lineups, pick up free agents, judge trades and see how this week's matchup is likely to go.
 
-- **Live app:** https://nba-9cat-optimizer.vercel.app (advisor, rankings, my team, waivers, trades, matchup simulator, backtest)
+- **Live app:** https://nba-9cat-optimizer.vercel.app (advisor, league power rankings, player rankings, waivers, trades, matchup simulator, backtest)
 
 <!-- Screenshots: run the app with real data, then `python scripts/capture_screenshots.py`. -->
 | Player rankings | Matchup simulator |
@@ -116,6 +116,19 @@ The **Advisor** tab turns everything above into ranked recommendations, each wit
 - **Strategy:** categories so far behind (`ADVICE_PUNT_THRESHOLD`) that you should either fix them or punt them.
 
 All thresholds live in `src/config.py`; behaviour is covered by `tests/test_web_advisor.py`.
+
+### 6. League view: team ratings and weekly power rankings
+
+Enter every team in the league (name and players; paste straight from Yahoo/ESPN), mark yourself and this week's
+opponent, and list players on waivers. The **League** tab then shows:
+
+- **Power rankings by all-play record:** each team's projected per-game line compared with every other team in all
+  nine categories (wins-losses-ties). A second ranking uses each roster's projected totals for the games it can still
+  start **this week**. ▲▼ show movement since last week.
+- **Category ratings:** every team ranked 1-12 in each category, plus projected per-game and this-week stat lines.
+- **Availability:** players are tagged by owner, **Waivers** or **FA** everywhere. The advisor says *Add* for free
+  agents and *Put in a claim* for waiver players, and only counts a claimed player's games after the claim clears
+  (`WAIVER_CLAIM_DAYS`).
 
 ## Backtest
 

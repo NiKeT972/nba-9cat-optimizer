@@ -141,7 +141,7 @@ def rank_waivers(
     1. Sum my roster's per-category z to find where I am weak.
     2. Turn that into need weights (weak ~2, average 1, strong ~0, punted 0).
     3. ``fit = sum(need_weight * player_z)`` per free agent.
-    4. Pair each free agent with my lowest-fit player as the drop: ``net_gain = fit - drop_fit``.
+    4. Pair each free agent with my lowest-value player as the drop: ``net_gain = fit - drop_fit``.
 
     Args:
         valued: Player table with z-scores.
@@ -176,7 +176,9 @@ def rank_waivers(
 
     if my_ids:
         my_fit = valued.loc[my_ids, Z_COLS].mul(w, axis=1).sum(axis=1)
-        worst = my_fit.idxmin()
+        # Drop the lowest-*value* player, not the worst fit: a stacked team's superstar can have
+        # the lowest need-weighted fit (every category he helps is already won), and nobody cuts him.
+        worst = valued.loc[my_ids, "z_total"].idxmin()
         out["drop"] = valued.loc[worst, "name"]
         out["net_gain"] = out["fit"] - my_fit[worst]
     sort_col = "fit"
