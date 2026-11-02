@@ -6,10 +6,10 @@
 <title>NBA 9-Cat Optimizer</title>
 <meta name="description" content="Projections, z-score valuation, start/sit, waivers, trades and Monte Carlo matchup simulation for 9-category head-to-head fantasy basketball.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>">
-<link rel="stylesheet" href="app.css?v=d19f8f6d9f">
+<link rel="stylesheet" href="app.css?v=7883152650">
 <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js" defer></script>
-<script src="core.js?v=d19f8f6d9f" defer></script>
-<script src="app.js?v=d19f8f6d9f" defer></script>
+<script src="core.js?v=7883152650" defer></script>
+<script src="app.js?v=7883152650" defer></script>
 </head>
 <body>
 <header class="top">
@@ -24,6 +24,7 @@
     <a class="gh" id="repo-link" href="https://github.com/NiKeT972/nba-9cat-optimizer">GitHub</a>
   </div>
   <nav class="wrap tabs" role="tablist" aria-label="Tools">
+    <button role="tab" data-tab="advisor">Advisor</button>
     <button role="tab" data-tab="rankings">Rankings</button>
     <button role="tab" data-tab="team">My Team</button>
     <button role="tab" data-tab="waivers">Waivers</button>
@@ -42,6 +43,7 @@
 </section>
 
 <main class="wrap" id="main">
+  <section id="tab-advisor" class="tab" hidden></section>
   <section id="tab-rankings" class="tab" hidden></section>
   <section id="tab-team" class="tab" hidden></section>
   <section id="tab-waivers" class="tab" hidden></section>

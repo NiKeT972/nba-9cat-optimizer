@@ -165,3 +165,14 @@ BACKTEST_MIN_MINUTES: float = 20.0  # only score fantasy-relevant players (proje
 SITE_DIR: Path = PROJECT_ROOT / os.getenv("NBA_SITE_DIR", "public")
 SITE_TOP_N: int = 50
 STREAMLIT_APP_URL: str = os.getenv("STREAMLIT_APP_URL", "")
+
+# ---------------------------------------------------------------------------
+# Advisor (plain-language roster recommendations in the web app)
+# ---------------------------------------------------------------------------
+ADVICE_SIM_COUNT: int = 3_000  # sims per what-if (each waiver move is re-simulated)
+ADVICE_WAIVER_CANDIDATES: int = 6  # free agents tested per mode (season-long + this week)
+ADVICE_MIN_GAIN: float = 0.5  # minimum need-weighted z gain before a move is suggested
+ADVICE_TRADE_FAIR_TOL: float = 0.5  # partner may lose at most this much raw z (keeps offers realistic)
+ADVICE_MAX_ITEMS: int = 3  # suggestions shown per section
+ADVICE_SAFE_PROB: float = 0.85  # category win prob above this = safe, below 1 - this = out of reach
+ADVICE_PUNT_THRESHOLD: float = -4.0  # team z below this in a category -> suggest considering a punt

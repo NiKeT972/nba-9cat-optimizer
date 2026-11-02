@@ -49,8 +49,9 @@
     try { localStorage.setItem(STORE, JSON.stringify({ rosters: state.rosters, punt: state.punt, includeToday: state.includeToday, tab: state.tab })); } catch (e) { /* private mode */ }
   }
   function load() {
+    let s = {};
     try {
-      const s = JSON.parse(localStorage.getItem(STORE) || "{}");
+      s = JSON.parse(localStorage.getItem(STORE) || "{}");
       if (s.rosters) for (const k of ["my", "opp", "other"]) state.rosters[k] = (s.rosters[k] || []).filter((id) => pmap.has(id));
       if (Array.isArray(s.punt)) state.punt = s.punt.filter((c) => CATS.includes(c));
       if (typeof s.includeToday === "boolean") state.includeToday = s.includeToday;
@@ -58,6 +59,7 @@
     } catch (e) { /* ignore */ }
     const hash = location.hash.slice(1);
     if (hash) state.tab = hash;
+    else if (!s.tab) state.tab = state.rosters.my.length ? "advisor" : "rankings";
   }
 
   let valuedCache = { key: null, rows: null };
@@ -210,7 +212,7 @@
     document.querySelectorAll(".tab").forEach((s) => (s.hidden = s.id !== "tab-" + state.tab));
     charts.length = 0;
     const el = document.getElementById("tab-" + state.tab);
-    const fn = { rankings: renderRankings, team: renderTeam, waivers: renderWaivers, trade: renderTrade, matchup: renderMatchup, about: renderAbout }[state.tab];
+    const fn = { advisor: renderAdvisor, rankings: renderRankings, team: renderTeam, waivers: renderWaivers, trade: renderTrade, matchup: renderMatchup, about: renderAbout }[state.tab];
     el.replaceChildren(...[].concat(fn ? fn() : renderRankings()).filter((x) => x !== null && x !== undefined && x !== false));
     charts.forEach((d) => d()); // charts can only draw once their container is in the page
   }
@@ -219,6 +221,121 @@
   const needData = () => h("div", { class: "empty" }, "No player data in this build yet. Run ", h("code", {}, "python -m src.data.pipeline"),
     " then ", h("code", {}, "python -m app.static_site"), " and push.");
   const needRoster = () => h("div", { class: "empty" }, "Add your players on the ", h("a", { href: "#team", onclick: (e) => { e.preventDefault(); setTab("team"); } }, "My Team"), " tab first.");
+
+
+  // ---------------------------------------------------------------- Advisor
+  const advCache = { key: null, data: null };
+  const catList = (cats) => cats.map((c) => L[c]).join(", ");
+  const pill = (text, kind) => h("span", { class: "pill " + kind }, text);
+
+  function renderAdvisor() {
+    if (!players.length) return [h("h2", {}, "Advisor"), needData()];
+    if (!state.rosters.my.length) return [h("h2", {}, "Advisor"), h("div", { class: "empty" },
+      "Add your team (and this week's opponent) on the ", h("a", { href: "#team", onclick: (e) => { e.preventDefault(); setTab("team"); } }, "My Team"),
+      " tab and the advisor will tell you who to start, who to pick up, which trades to offer and which categories to chase.")];
+    const t = today();
+    const key = JSON.stringify([state.rosters, state.punt, state.includeToday, t]);
+    const holder = h("div", { class: "advice" });
+    const show = () => holder.replaceChildren(...adviceCards(advCache.data).filter(Boolean));
+    if (advCache.key === key) show();
+    else {
+      holder.replaceChildren(h("p", { class: "dim" }, "Analysing your roster, the waiver wire and this week's matchup…"));
+      setTimeout(() => {
+        advCache.data = NC.advise(valued().rows, state.rosters, D.schedule || [], t, cfg,
+          { punt: state.punt, includeToday: state.includeToday, recent: D.recent || [] });
+        advCache.key = key; show();
+      }, 30);
+    }
+    return [h("h2", {}, "Advisor"),
+      h("p", { class: "lede" }, "Plain-language roster decisions for this week, ranked by impact. Every suggestion is backed by the projections and a re-run of your matchup simulation."),
+      !state.rosters.other.length ? h("div", { class: "warn" }, "Tip: add the rest of your league's rosters on My Team, so the advisor only suggests players who are actually available.") : null,
+      holder];
+  }
+
+  function adviceCards(a) {
+    const { map } = valued(); const name = (id) => map.get(id)?.name || "?";
+    const cards = [];
+
+    // Matchup
+    if (a.matchup) {
+      const m = a.matchup; const [me, them] = m.expected; const winning = me > them;
+      const pc = (c) => pct(m.cats.find((x) => x.cat === c).pWin);
+      cards.push(h("div", { class: "acard" }, h("h3", {}, "This week's matchup"),
+        h("div", { class: "headline" }, `You're projected to ${winning ? "win" : "lose"} ${me.toFixed(1)}–${them.toFixed(1)} · ${pct(m.pWin)} chance to win the week`),
+        h("ul", {},
+          m.targets.length ? h("li", {}, h("b", {}, "Chase: "), m.targets.map((c) => `${L[c]} (${pc(c)})`).join(", "),
+            ". These are close, so stream and start for them.") : h("li", {}, "No category is close: the week is mostly decided by your current roster."),
+          m.safe.length ? h("li", {}, h("b", {}, "Locked in: "), catList(m.safe), ". No need to add more here.") : null,
+          m.lost.length ? h("li", {}, h("b", {}, "Out of reach: "), catList(m.lost), ". Don't spend moves chasing these this week.") : null,
+          h("li", {}, `Games left: you ${m.myGames}, them ${m.oppGames}.`,
+            m.myGames < m.oppGames ? " You're behind on volume, so a streamer with extra games helps." : ""))));
+    } else if (!state.rosters.opp.length) {
+      cards.push(h("div", { class: "acard" }, h("h3", {}, "This week's matchup"),
+        h("p", {}, "Add this week's opponent on My Team to get matchup advice and to test every move against them.")));
+    }
+
+    // Waiver moves
+    const moves = a.moves;
+    cards.push(h("div", { class: "acard" }, h("h3", {}, "Waiver moves"),
+      moves.length ? moves.map((mv) => h("div", { class: "rec" },
+        h("div", {},
+          h("div", { class: "what" }, "Add ", h("b", {}, mv.addName), ", drop ", h("b", {}, mv.dropName)),
+          h("div", { class: "why" },
+            mv.helps.length ? ["Helps ", catList(mv.helps), " · "] : null,
+            "season value ", pill(sg(mv.gain), mv.gain >= 0 ? "good" : "bad"),
+            mv.dExpected !== undefined ? [" · this week ", Math.abs(mv.dExpected) < 0.05 ? pill("±0.0 cats", "neutral")
+              : pill(`${sg(mv.dExpected, 1)} cats`, mv.dExpected > 0 ? "good" : "bad"),
+              ` win chance ${pct(a.matchup.pWin)} → ${pct(a.matchup.pWin + mv.dWin)}`] : null,
+            mv.games !== null ? ` · ${mv.games} games this week vs ${mv.dropGames}` : null)),
+        h("button", { class: "btn primary small", type: "button", onclick: () => {
+          if (!confirm(`Add ${mv.addName} and drop ${mv.dropName} on your roster here?`)) return;
+          for (const k of Object.keys(state.rosters)) state.rosters[k] = state.rosters[k].filter((x) => x !== mv.add);
+          state.rosters.my = state.rosters.my.filter((x) => x !== mv.drop).concat(mv.add);
+          changed();
+        } }, "Make this move")))
+        : h("p", { class: "dim" }, "No free agent clearly beats your weakest player right now. Hold your roster.")));
+
+    // Lineup
+    if (a.lineup) {
+      const lu = a.lineup; const items = [];
+      if (lu.lostStarts) items.push(h("li", {}, `You'll lose ${lu.lostStarts} start${lu.lostStarts > 1 ? "s" : ""} to the bench on crowded days: `,
+        lu.benched.map((b) => `${b.name} (${b.days.map((d) => niceDate(d).split(",")[0]).join(", ")})`).join("; "),
+        ". If one of them is a weak hold, swapping him for a player on a lighter schedule gains games."));
+      for (const p of lu.idle) items.push(h("li", {}, h("b", {}, p.name), ` hasn't played in ${p.days} days. Likely injured: move him to an IL slot or consider dropping him.`));
+      for (const p of lu.noGames) items.push(h("li", {}, h("b", {}, p.name), " has no games left this week."));
+      cards.push(h("div", { class: "acard" }, h("h3", {}, "Lineup"),
+        items.length ? h("ul", {}, items) : h("p", {}, "Your lineup is clean: every player can start all his games this week.")));
+    }
+
+    // Trades
+    cards.push(h("div", { class: "acard" }, h("h3", {}, "Trade ideas"),
+      a.trades.length ? a.trades.map((t) => h("div", { class: "rec" },
+        h("div", {},
+          h("div", { class: "what" }, "Offer ", h("b", {}, t.giveName), " for ", h("b", {}, t.getName),
+            h("span", { class: "dim" }, t.fromOpponent ? "  (your opponent)" : "  (another team)")),
+          h("div", { class: "why" },
+            t.improves.length ? ["Improves ", catList(t.improves)] : "Better fit for your needs",
+            t.costs.length ? [" · costs ", catList(t.costs)] : null,
+            " · your need-weighted gain ", pill(sg(t.gain), "good"),
+            " · for them ", pill(`${sg(t.theirChange)} value`, t.theirChange >= 0 ? "good" : "neutral"))),
+        h("button", { class: "btn small", type: "button", onclick: () => { state.trade.give = [t.give]; state.trade.get = [t.get]; setTab("trade"); } }, "Open in Trade")))
+        : h("p", { class: "dim" }, state.rosters.other.length || state.rosters.opp.length
+          ? "No fair 1-for-1 trade clearly improves your weak categories right now."
+          : "Add other teams' rosters on My Team to get trade ideas.")));
+
+    // Strategy
+    const weakest = CATS.filter((c) => !state.punt.includes(c)).sort((x, y) => a.teamZ[x] - a.teamZ[y]).slice(0, 2);
+    cards.push(h("div", { class: "acard" }, h("h3", {}, "Strategy"),
+      h("ul", {},
+        a.strategy.map((s) => h("li", {}, h("b", {}, `${L[s.cat]} is far behind`), ` (your team is ${sg(s.teamZ)} z there). Decide: either fix it (the moves above target it), or punt it so every suggestion builds the other eight categories instead. `,
+          h("button", { class: "btn small", type: "button", onclick: () => { state.punt = [...state.punt, s.cat]; syncPuntChips(); changed(); } }, `Punt ${L[s.cat]}`))),
+        h("li", {}, "Your biggest needs right now: ", h("b", {}, catList(weakest)), ". Waiver and trade suggestions weight these most."),
+        state.punt.length ? h("li", {}, `Punting: ${catList(state.punt)}. These are ignored in every suggestion.`) : null)));
+    return cards;
+  }
+  function syncPuntChips() {
+    document.querySelectorAll("#punt-chips .chip").forEach((b, i) => b.setAttribute("aria-pressed", String(state.punt.includes(CATS[i]))));
+  }
 
   // ---------------------------------------------------------------- Rankings
   function renderRankings() {

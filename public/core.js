@@ -366,6 +366,114 @@
     };
   }
 
+  // ------------------------------------------------------------------ advisor
+  /**
+   * Turn the analysis into ranked, plain-language roster recommendations.
+   *
+   * rosters: {my, opp, other} player-id lists. Every number comes from the functions above;
+   * thresholds come from cfg (src/config.py). Returns structured advice for the UI to word.
+   */
+  function advise(rows, rosters, schedule, today, cfg, { punt = [], includeToday = true, recent = [] } = {}) {
+    const map = byId(rows);
+    const my = rosters.my.filter((i) => map.has(i));
+    const opp = (rosters.opp || []).filter((i) => map.has(i));
+    const others = [...opp, ...(rosters.other || [])].filter((i) => map.has(i));
+    const out = { matchup: null, lineup: null, moves: [], trades: [], strategy: [] };
+    if (!my.length) return out;
+
+    const tz = teamCategoryZ(map, my);
+    const w = needWeights(tz, cfg, punt);
+    const fitOf = (p) => sum(CATS.map((c) => w[c] * p.z[c]));
+    const canSim = !!(schedule && schedule.length && opp.length);
+    const sim = (ids) => simulateMatchup(rows, ids, opp, schedule, today, cfg,
+      { nSims: cfg.advice_sim_count, includeToday, recent });
+
+    // 1. This week's matchup
+    let base = null;
+    if (canSim) {
+      base = sim(my);
+      const safe = cfg.advice_safe;
+      out.matchup = {
+        expected: base.expected, pWin: base.pWin, myGames: base.myGames, oppGames: base.oppGames,
+        targets: base.targets,
+        safe: base.cats.filter((r) => r.pWin >= safe).map((r) => r.cat),
+        lost: base.cats.filter((r) => r.pWin <= 1 - safe).map((r) => r.cat),
+        cats: base.cats,
+      };
+    }
+
+    // 2. Lineup: starts lost on crowded days, and players who have stopped playing
+    if (schedule && schedule.length) {
+      const ss = startSit(rows, my, schedule, today, includeToday, cfg);
+      const lu = dailyLineups(rows, my, schedule, today, includeToday, cfg);
+      const benchDays = new Map();
+      for (const g of lu) if (!g.start) { if (!benchDays.has(g.id)) benchDays.set(g.id, []); benchDays.get(g.id).push(g.d); }
+      out.lineup = {
+        benched: ss.filter((r) => r.benched > 0).map((r) => ({ id: r.id, name: r.name, days: benchDays.get(r.id) || [] })),
+        lostStarts: sum(ss.map((r) => r.benched)),
+        idle: my.map((i) => map.get(i)).filter((p) => !p.active).map((p) => ({ id: p.id, name: p.name, days: p.days_since_game })),
+        noGames: ss.filter((r) => r.games === 0).map((r) => ({ id: r.id, name: r.name })),
+      };
+    }
+
+    // 3. Waiver moves: best season-long fits and best this-week streams, each re-simulated
+    const wk = schedule && schedule.length ? weekWindow(today, includeToday, cfg) : null;
+    const gl = wk ? gamesRemaining(rows, rows.map((r) => r.id), schedule, wk.start, wk.end) : null;
+    const season = rankWaivers(rows, my, others, cfg, { punt }).rows.slice(0, cfg.advice_candidates);
+    const weekly = gl ? rankWaivers(rows, my, others, cfg, { punt, gamesLeft: gl }).rows.slice(0, cfg.advice_candidates) : [];
+    const seen = new Set(); const cands = [];
+    for (const c of [...season, ...weekly]) if (!seen.has(c.id)) { seen.add(c.id); cands.push(c); }
+    for (const c of cands) {
+      if (c.dropId === undefined) continue;
+      const move = { add: c.id, addName: c.name, drop: c.dropId, dropName: c.drop, gain: c.netGain, helps: c.helps,
+        games: gl ? gl.get(c.id) || 0 : null, dropGames: gl ? gl.get(c.dropId) || 0 : null };
+      if (base) {
+        const after = sim(my.filter((i) => i !== c.dropId).concat(c.id));
+        move.dExpected = after.expected[0] - base.expected[0];
+        move.dWin = after.pWin - base.pWin;
+      }
+      out.moves.push(move);
+    }
+    const worth = (m) => m.gain >= cfg.advice_min_gain || (m.dExpected !== undefined && m.dExpected >= cfg.advice_min_gain / 2);
+    out.moves = out.moves.filter(worth)
+      .sort((a, b) => (b.gain + (b.dExpected || 0)) - (a.gain + (a.dExpected || 0)))
+      .slice(0, cfg.advice_max);
+
+    // 4. Trade ideas: 1-for-1 that fills my needs while the partner doesn't lose raw value
+    const ideas = [];
+    for (const i of my) {
+      const give = map.get(i);
+      for (const j of others) {
+        const get = map.get(j);
+        const theirChange = give.total - get.total; // raw z the partner gains (+) or loses (-)
+        if (theirChange < -cfg.advice_fair_tol) continue;
+        const mine = fitOf(get) - fitOf(give);
+        if (mine < cfg.advice_min_gain) continue;
+        const delta = CATS.map((c) => [c, get.z[c] - give.z[c]]).filter(([c]) => !punt.includes(c));
+        ideas.push({ give: i, giveName: give.name, get: j, getName: get.name, gain: mine, theirChange,
+          fromOpponent: opp.includes(j),
+          improves: delta.filter(([, d]) => d > 0.25).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c]) => c),
+          costs: delta.filter(([, d]) => d < -0.25).sort((a, b) => a[1] - b[1]).slice(0, 2).map(([c]) => c) });
+      }
+    }
+    ideas.sort((a, b) => b.gain - a.gain);
+    const usedGive = new Set(), usedGet = new Set();
+    for (const t of ideas) {
+      if (usedGive.has(t.give) || usedGet.has(t.get)) continue;
+      usedGive.add(t.give); usedGet.add(t.get); out.trades.push(t);
+      if (out.trades.length >= cfg.advice_max) break;
+    }
+
+    // 5. Strategy: categories so weak that punting them is worth considering
+    for (const c of CATS) {
+      if (punt.includes(c) || tz[c] > cfg.advice_punt_threshold) continue;
+      out.strategy.push({ type: "punt", cat: c, teamZ: tz[c] });
+    }
+    out.strategy.sort((a, b) => a.teamZ - b.teamZ);
+    out.weights = w; out.teamZ = tz;
+    return out;
+  }
+
   // ------------------------------------------------------------------ name matching (paste a roster)
   const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
   function matchNames(lines, rows) {
@@ -386,5 +494,5 @@
 
   return { CATS, COUNT, PCT, poolPct, catValues, fitPool, valuePlayers, teamTotals, teamCategoryZ, needWeights,
     weekWindow, addDays, gamesRemaining, dailyLineups, startSit, rankWaivers, analyzeTrade, simulateMatchup,
-    matchNames, norm, byId };
+    matchNames, norm, byId, advise };
 });
