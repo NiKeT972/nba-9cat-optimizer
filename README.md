@@ -204,14 +204,21 @@ Python pipeline ──► public/data/app.json ──► web/core.js (browser en
 same inputs (z-scores exactly; simulation probabilities within 3 points), so the two can't drift apart.
 [`vercel.json`](vercel.json) serves `public/` with no build step.
 
-**Data refresh.** stats.nba.com blocks most cloud IPs, so nothing downloads at request time. Refresh locally and
-push (or let the scheduled [`refresh-data`](.github/workflows/refresh-data.yml) Action try):
+**Data refresh (daily, on your own computer).** stats.nba.com blocks cloud servers: requests from GitHub
+Actions time out (verified), so nothing downloads at request time and the refresh runs on a home connection.
+`scripts/refresh.ps1` downloads the newest games in *strict* mode (a failed download is an error, never a silent
+re-publish of old data), rebuilds `public/`, commits and pushes; Vercel redeploys. Register it once with Windows
+Task Scheduler:
 
-```bash
-python -m src.data.pipeline --force    # latest games
-python -m app.static_site              # rebuild public/
-git add data/raw public && git commit -m "Refresh data" && git push   # Vercel redeploys
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-daily-task.ps1            # daily at 12:00
+powershell -ExecutionPolicy Bypass -File scripts\install-daily-task.ps1 -Time 09:30
 ```
+
+Each run is logged to `data/refresh.log`. On macOS/Linux the same steps are
+`python -m src.data.pipeline --force --strict && python -m app.static_site` followed by a commit and push.
+The [`refresh-data`](.github/workflows/refresh-data.yml) workflow is kept for manual runs (for example with an
+`NBA_API_PROXY` secret that can reach stats.nba.com).
 
 **Streamlit (local power-user version).** `streamlit run app/streamlit_app.py` runs the same tools in Python,
 with rosters saved to `data/my_rosters.json`. It can also go on Streamlit Community Cloud (main file

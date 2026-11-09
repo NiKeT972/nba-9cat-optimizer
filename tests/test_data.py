@@ -179,3 +179,17 @@ def test_clean_schedule_drops_games_with_unknown_teams(raw_schedule):
     sched = clean.clean_schedule(pd.concat([raw_schedule, tbd], ignore_index=True))
     assert "0022601201" not in set(sched["game_id"])
     assert sched["home_team"].notna().all() and sched["away_team"].notna().all()
+
+
+def test_strict_mode_raises_instead_of_using_stale_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(fetch.config, "STRICT_DOWNLOADS", True)
+    monkeypatch.setattr(fetch.config, "OFFLINE", False)
+    path = tmp_path / "x.parquet"
+    pd.DataFrame({"v": [7]}).to_parquet(path)
+
+    def broken():
+        raise ConnectionError("blocked")
+
+    monkeypatch.setattr(fetch, "call_with_retry", lambda fn: fn())
+    with pytest.raises(ConnectionError):
+        fetch.cached_fetch(path, broken, force=True)

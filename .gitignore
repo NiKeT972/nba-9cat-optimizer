@@ -11,3 +11,4 @@ __pycache__/
 data/processed/
 data/my_rosters.json
 *.tmp
+data/refresh.log
