@@ -91,6 +91,7 @@ def cached_fetch(
     """Return the parquet at ``path`` if fresh, otherwise download, cache and return it.
 
     If the download fails but a stale cache exists, the stale cache is returned
+    (unless ``config.STRICT_DOWNLOADS``, used by automated refreshes, where it raises)
     (with a warning) so the app keeps working offline.
 
     Args:
@@ -109,7 +110,7 @@ def cached_fetch(
     try:
         df = call_with_retry(fetch_fn)
     except Exception:
-        if path.exists():
+        if path.exists() and not config.STRICT_DOWNLOADS:
             logger.warning("Download failed; falling back to stale cache %s", path.name)
             return pd.read_parquet(path)
         raise

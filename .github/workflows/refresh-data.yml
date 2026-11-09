@@ -1,13 +1,16 @@
 name: refresh data and site
 
 # Downloads the latest game logs, rebuilds the backtest report (if missing) and the
-# static site, and commits the results. The push redeploys Streamlit Cloud and Vercel.
-# stats.nba.com often blocks GitHub-hosted runners; if this job fails, set the
-# NBA_API_PROXY secret or run `make refresh` locally and push.
+# web app, and commits the results. The push redeploys Vercel.
+#
+# Manual only: stats.nba.com times out for GitHub-hosted runners (verified Nov 2026),
+# so a daily schedule here cannot download anything. Daily refreshes run on your own
+# computer instead (scripts/refresh.ps1 + scripts/install-daily-task.ps1).
+# If you add an NBA_API_PROXY secret that reaches stats.nba.com, re-enable the schedule:
+#   schedule:
+#     - cron: "17 10 * * *"
 
 on:
-  schedule:
-    - cron: "17 10 * * *"   # daily, after the night's games are final
   workflow_dispatch:
 
 permissions:
@@ -28,7 +31,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Download data
         run: |
-          python -m src.data.pipeline --force
+          python -m src.data.pipeline --force --strict   # fail loudly if the NBA blocks us
           python -m src.data.pipeline --season "$(python -c 'from src import config; print(config.PRIOR_SEASON)')"
       - name: Backtest (only when the report is missing)
         run: |

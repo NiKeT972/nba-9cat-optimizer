@@ -146,6 +146,9 @@ SIM_CLOSE_BAND: tuple[float, float] = (0.25, 0.75)  # win prob range flagged as 
 # stats.nba.com blocks many cloud IPs. With NBA_OFFLINE=1 the app never calls the
 # API and only reads the committed parquet cache (set this on Streamlit Cloud).
 OFFLINE: bool = os.getenv("NBA_OFFLINE", "0").lower() in ("1", "true", "yes")
+# Strict mode: a failed download is an error instead of silently reusing the stale cache.
+# Automated refreshes use it, so a blocked API shows up as a failure, not as "fresh" old data.
+STRICT_DOWNLOADS: bool = os.getenv("NBA_STRICT", "0").lower() in ("1", "true", "yes")
 # Disable writing rosters to disk (public demo deployments: rosters live in the browser session only).
 ROSTER_SAVE_ENABLED: bool = os.getenv("NBA_ROSTER_SAVE", "1").lower() in ("1", "true", "yes")
 

@@ -44,8 +44,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch and cache NBA data.")
     parser.add_argument("--season", default=config.SEASON)
     parser.add_argument("--force", action="store_true", help="ignore cache and re-download")
+    parser.add_argument("--strict", action="store_true",
+                        help="fail if a download fails instead of reusing the old cache (for automated refreshes)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    if args.strict:
+        config.STRICT_DOWNLOADS = True
 
     logs = load_game_logs(args.season, force=args.force)
     sched = load_schedule(args.season, force=args.force)
