@@ -8,8 +8,6 @@ name: refresh data and site
 # Downloads run with --strict: if neither source works the job fails (red X) instead
 # of re-publishing old data.
 
-on: "17 10 * * *"
-
 on:
   workflow_dispatch:
 
