@@ -145,14 +145,33 @@ def _download_schedule(season: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     return resp.season_games.get_data_frame(), resp.season_weeks.get_data_frame()
 
 
+def _cdn_allowed(season: str) -> bool:
+    return config.CDN_FALLBACK and season == config.SEASON  # the CDN only serves the current season
+
+
+def _game_logs_any_source(season: str, path: Path) -> pd.DataFrame:
+    """stats.nba.com first; if it refuses us, update the cached logs from the CDN's box scores."""
+    try:
+        return _download_player_game_logs(season)
+    except Exception as exc:  # noqa: BLE001
+        if not _cdn_allowed(season):
+            raise
+        from src.data import cdn
+
+        logger.warning("stats.nba.com failed (%s); updating game logs from cdn.nba.com", exc)
+        cached = pd.read_parquet(path) if path.exists() else pd.DataFrame()
+        return cdn.update_game_logs(cached, cdn.download_schedule())
+
+
 def fetch_player_game_logs(season: str = config.SEASON, force: bool = False) -> pd.DataFrame:
     """Raw league-wide player game logs for ``season`` (cached).
 
-    Completed past seasons never change, so their cache never expires.
+    Completed past seasons never change, so their cache never expires. For the current season,
+    if stats.nba.com is unreachable the logs are brought up to date from cdn.nba.com box scores.
     """
     path = config.RAW_DIR / f"player_game_logs_{season}.parquet"
     ttl = config.CACHE_TTL_HOURS if season == config.SEASON else float("inf")
-    return cached_fetch(path, lambda: _download_player_game_logs(season), force=force, ttl_hours=ttl)
+    return cached_fetch(path, lambda: _game_logs_any_source(season, path), force=force, ttl_hours=ttl)
 
 
 def fetch_schedule(season: str = config.SEASON, force: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -171,7 +190,16 @@ def fetch_schedule(season: str = config.SEASON, force: bool = False) -> tuple[pd
     cache: dict[str, pd.DataFrame] = {}
 
     def _games() -> pd.DataFrame:
-        cache["games"], cache["weeks"] = _download_schedule(season)
+        try:
+            cache["games"], cache["weeks"] = _download_schedule(season)
+        except Exception as exc:  # noqa: BLE001
+            if not _cdn_allowed(season):
+                raise
+            from src.data import cdn
+
+            logger.warning("stats.nba.com failed (%s); using the cdn.nba.com schedule", exc)
+            cache["games"] = cdn.download_schedule()
+            cache["weeks"] = pd.read_parquet(weeks_path) if weeks_path.exists() else pd.DataFrame()
         return cache["games"]
 
     games = cached_fetch(games_path, _games, force=True)

@@ -37,6 +37,10 @@ API_BACKOFF_BASE_SECONDS: float = 2.0  # sleeps 2, 4, 8, 16 ... between retries
 API_MIN_INTERVAL_SECONDS: float = 0.8  # politeness gap between consecutive calls
 API_PROXY: str | None = os.getenv("NBA_API_PROXY") or None
 SCHEDULE_CDN_URL: str = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"
+BOXSCORE_CDN_URL: str = "https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id}.json"
+# When stats.nba.com refuses us (it blocks cloud servers), rebuild the current season from the
+# public CDN instead: schedule + box scores of finished games (src/data/cdn.py).
+CDN_FALLBACK: bool = os.getenv("NBA_CDN_FALLBACK", "1").lower() in ("1", "true", "yes")
 
 # ---------------------------------------------------------------------------
 # League settings

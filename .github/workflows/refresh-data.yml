@@ -3,12 +3,12 @@ name: refresh data and site
 # Downloads the latest game logs, rebuilds the backtest report (if missing) and the
 # web app, and commits the results. The push redeploys Vercel.
 #
-# Manual only: stats.nba.com times out for GitHub-hosted runners (verified Nov 2026),
-# so a daily schedule here cannot download anything. Daily refreshes run on your own
-# computer instead (scripts/refresh.ps1 + scripts/install-daily-task.ps1).
-# If you add an NBA_API_PROXY secret that reaches stats.nba.com, re-enable the schedule:
-#   schedule:
-#     - cron: "17 10 * * *"
+# stats.nba.com times out for GitHub-hosted runners, so the current season falls back to
+# the NBA's public CDN (cdn.nba.com: schedule + box scores, see src/data/cdn.py).
+# Downloads run with --strict: if neither source works the job fails (red X) instead
+# of re-publishing old data.
+
+on: "17 10 * * *"
 
 on:
   workflow_dispatch:
