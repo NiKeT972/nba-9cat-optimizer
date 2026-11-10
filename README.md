@@ -204,8 +204,9 @@ Python pipeline ──► public/data/app.json ──► web/core.js (browser en
 same inputs (z-scores exactly; simulation probabilities within 3 points), so the two can't drift apart.
 [`vercel.json`](vercel.json) serves `public/` with no build step.
 
-**Data refresh (daily, on your own computer).** stats.nba.com blocks cloud servers: requests from GitHub
-Actions time out (verified), so nothing downloads at request time and the refresh runs on a home connection.
+**Data refresh (daily, on your own computer).** The NBA blocks cloud servers: from GitHub Actions, stats.nba.com
+times out and cdn.nba.com answers 403 (both verified), so the refresh runs on a home connection. (If stats.nba.com
+is down for a moment, the current season falls back to the public CDN's box scores, `src/data/cdn.py`.)
 `scripts/refresh.ps1` downloads the newest games in *strict* mode (a failed download is an error, never a silent
 re-publish of old data), rebuilds `public/`, commits and pushes; Vercel redeploys. Register it once with Windows
 Task Scheduler:
