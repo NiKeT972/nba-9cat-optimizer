@@ -12,3 +12,4 @@ data/processed/
 data/my_rosters.json
 *.tmp
 data/refresh.log
+data/task-output.log

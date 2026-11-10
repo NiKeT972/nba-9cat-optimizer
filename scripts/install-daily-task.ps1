@@ -28,11 +28,17 @@ $repo = Split-Path -Parent $PSScriptRoot
 $script = Join-Path $PSScriptRoot "refresh.ps1"
 if (-not (Test-Path $script)) { throw "Can't find $script" }
 
+# Everything the hidden run prints (including errors before the script's own log starts)
+# goes to data\task-output.log, so a scheduled run is never a silent mystery.
+$outLog = Join-Path $repo "data\task-output.log"
+$command = '& ''{0}'' *> ''{1}''; exit $LASTEXITCODE' -f $script, $outLog
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument ("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"{0}`"" -f $script) `
+    -Argument ("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"{0}`"" -f $command) `
     -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
+# Laptop-friendly: Windows' defaults refuse to start (or kill) tasks on battery power.
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
@@ -43,3 +49,4 @@ Write-Host ""
 Write-Host "Done: '$TaskName' will run every day at $Time."
 Write-Host "Run it now to test:   Start-ScheduledTask -TaskName '$TaskName'"
 Write-Host "See what happened:    Get-Content '$repo\data\refresh.log' -Tail 30"
+Write-Host "Raw output of the last scheduled run:  Get-Content '$outLog'"
